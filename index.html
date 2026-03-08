@@ -1,0 +1,3087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess Coach</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0f0f0f; --bg2: #1a1a1a; --bg3: #252525; --bg4: #333;
+  --accent: #e94560; --accent2: #0f3460; --green: #4caf50; --orange: #ff9800; --red: #f44336;
+  --text: #e0e0e0; --text2: #999; --light-sq: #f0d9b5; --dark-sq: #b58863;
+  --board-size: min(480px, calc(100vw - 100px));
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+a { color: var(--accent); }
+button { cursor: pointer; font-family: inherit; }
+header { background: var(--bg2); border-bottom: 1px solid var(--bg4); padding: 10px 20px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.logo { font-size: 1.4em; font-weight: bold; white-space: nowrap; }
+#main-nav { display: flex; gap: 4px; }
+.tab-btn { background: transparent; border: none; color: var(--text2); padding: 8px 16px; border-radius: 6px; font-size: 0.9em; transition: all 0.2s; }
+.tab-btn:hover { background: var(--bg3); color: var(--text); }
+.tab-btn.active { background: var(--accent); color: #fff; }
+#engine-status { margin-left: auto; font-size: 0.8em; color: var(--text2); white-space: nowrap; }
+#engine-status.ready { color: var(--green); }
+#engine-status.error { color: var(--red); }
+main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* Import Tab */
+.import-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.import-card { background: var(--bg2); border-radius: 10px; padding: 20px; }
+.import-card h2 { font-size: 1.1em; margin-bottom: 12px; }
+.input-group { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.input-group input, .input-group select { flex: 1; min-width: 120px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); font-size: 0.9em; }
+textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); font-size: 0.85em; font-family: monospace; resize: vertical; margin-bottom: 10px; }
+.btn-primary { background: var(--accent); color: #fff; border: none; padding: 8px 20px; border-radius: 6px; font-size: 0.9em; transition: opacity 0.2s; }
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: var(--bg4); color: var(--text); border: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9em; }
+.btn-secondary:hover { background: #444; }
+#fetch-status { font-size: 0.85em; color: var(--text2); margin-top: 8px; min-height: 20px; }
+.games-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.game-card { background: var(--bg2); border-radius: 8px; padding: 14px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s; }
+.game-card:hover { border-color: var(--accent); }
+.game-card .players { font-weight: 600; margin-bottom: 4px; }
+.game-card .meta { font-size: 0.8em; color: var(--text2); }
+.game-card .result { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; font-weight: 600; }
+.result.win { background: rgba(76,175,80,0.2); color: var(--green); }
+.result.loss { background: rgba(244,67,54,0.2); color: var(--red); }
+.result.draw { background: rgba(255,152,0,0.2); color: var(--orange); }
+
+/* Analyze Tab */
+.analyze-container { display: flex; gap: 20px; align-items: flex-start; }
+.board-section { flex-shrink: 0; }
+.board-wrapper { display: flex; gap: 0; }
+.player-info { padding: 6px 0; font-size: 0.9em; min-height: 28px; }
+.chess-board { display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: var(--board-size); height: var(--board-size); border: 2px solid #555; user-select: none; position: relative; }
+.square { position: relative; display: flex; align-items: center; justify-content: center; }
+.square.light { background: var(--light-sq); }
+.square.dark { background: var(--dark-sq); }
+.square.selected.light { background: #829769; }
+.square.selected.dark { background: #646f40; }
+.square.last-move.light { background: #cdd26a; }
+.square.last-move.dark { background: #aaa23a; }
+.square.highlight-blunder { box-shadow: inset 0 0 0 3px var(--red); }
+.square.highlight-mistake { box-shadow: inset 0 0 0 3px var(--orange); }
+.square.highlight-inaccuracy { box-shadow: inset 0 0 0 3px #ffeb3b; }
+.square.highlight-best { box-shadow: inset 0 0 0 3px #2196f3; }
+.square.highlight-brilliant { box-shadow: inset 0 0 0 3px #00e5ff; }
+.square.highlight-excellent { box-shadow: inset 0 0 0 3px var(--green); }
+.square.check.light { background: #e84040; }
+.square.check.dark { background: #c62828; }
+.square .move-hint { position: absolute; width: 28%; height: 28%; border-radius: 50%; background: rgba(0,0,0,0.15); pointer-events: none; z-index: 2; }
+.square .capture-hint { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 5px solid rgba(0,0,0,0.15); pointer-events: none; z-index: 2; box-sizing: border-box; }
+.piece { font-size: calc(var(--board-size) / 9.5); line-height: 1; cursor: grab; z-index: 3; }
+.piece.white-piece { color: #fff; text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.9); }
+.piece.black-piece { color: #1a1a1a; text-shadow: 0 0 3px rgba(255,255,255,0.3), 0 1px 2px rgba(0,0,0,0.5); }
+.piece.dragging { position: fixed; pointer-events: none; z-index: 1000; cursor: grabbing; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4)); }
+.coord { position: absolute; font-size: 10px; font-weight: 600; pointer-events: none; z-index: 1; }
+.coord-file { bottom: 1px; right: 3px; }
+.coord-rank { top: 1px; left: 3px; }
+.square.light .coord { color: var(--dark-sq); }
+.square.dark .coord { color: var(--light-sq); }
+.eval-bar { width: 24px; height: var(--board-size); background: #333; border: 2px solid #555; position: relative; overflow: hidden; flex-shrink: 0; }
+.eval-fill { position: absolute; bottom: 0; width: 100%; height: 50%; background: #eee; transition: height 0.4s ease; }
+.eval-text { position: absolute; width: 100%; text-align: center; font-size: 9px; font-weight: bold; z-index: 2; writing-mode: vertical-rl; text-orientation: mixed; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.board-controls { display: flex; gap: 6px; margin-top: 8px; justify-content: center; }
+.ctrl-btn { background: var(--bg3); border: 1px solid var(--bg4); color: var(--text); width: 40px; height: 36px; border-radius: 6px; font-size: 1em; display: flex; align-items: center; justify-content: center; }
+.ctrl-btn:hover { background: var(--bg4); }
+.analysis-section { flex: 1; min-width: 0; background: var(--bg2); border-radius: 10px; padding: 16px; max-height: calc(var(--board-size) + 100px); display: flex; flex-direction: column; }
+.move-list { flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.85em; margin-bottom: 10px; min-height: 100px; max-height: 300px; }
+.move-list::-webkit-scrollbar { width: 6px; }
+.move-list::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+.move-row { display: flex; align-items: stretch; }
+.move-num { width: 32px; color: var(--text2); text-align: right; padding: 3px 6px 3px 0; flex-shrink: 0; }
+.move-cell { flex: 1; padding: 3px 8px; cursor: pointer; border-radius: 3px; transition: background 0.15s; }
+.move-cell:hover { background: var(--bg4); }
+.move-cell.active { background: var(--accent2); font-weight: bold; }
+.move-cell.blunder { color: var(--red); }
+.move-cell.mistake { color: var(--orange); }
+.move-cell.inaccuracy { color: #ffeb3b; }
+.move-cell.good { color: var(--green); }
+.move-cell.excellent { color: var(--green); }
+.move-cell.best { color: #2196f3; }
+.move-cell.brilliant { color: #00e5ff; }
+.move-cell.book { color: #a0887a; }
+.move-cell.opponent { color: var(--text2); opacity: 0.6; }
+.engine-analysis { background: var(--bg3); border-radius: 6px; padding: 12px; margin-bottom: 10px; font-size: 0.85em; }
+.analysis-eval { font-size: 1.2em; font-weight: bold; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+.analysis-badge { display: inline-block; font-size: 0.65em; padding: 2px 8px; border-radius: 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.badge-blunder { background: var(--red); color: #fff; }
+.badge-mistake { background: var(--orange); color: #fff; }
+.badge-inaccuracy { background: #ffeb3b; color: #000; }
+.badge-best { background: #2196f3; color: #fff; }
+.badge-excellent { background: var(--green); color: #fff; }
+.badge-good { background: #66bb6a; color: #fff; }
+.badge-brilliant { background: #00e5ff; color: #000; }
+.badge-book { background: #a0887a; color: #fff; }
+.analysis-best { color: var(--text2); margin-bottom: 6px; font-family: monospace; }
+.analysis-winchance { font-size: 0.85em; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+.wc-bar { flex: 1; height: 10px; background: var(--bg4); border-radius: 5px; overflow: hidden; max-width: 120px; }
+.wc-bar-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
+.analysis-comment { font-style: italic; line-height: 1.4; }
+.game-summary { background: var(--bg3); border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 0.85em; }
+.game-summary h3 { margin-bottom: 8px; font-size: 1em; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.summary-item { display: flex; justify-content: space-between; }
+.summary-label { color: var(--text2); }
+.progress-bar { width: 100%; height: 6px; background: var(--bg4); border-radius: 3px; margin: 8px 0; overflow: hidden; }
+.progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; border-radius: 3px; }
+
+/* Puzzles Tab */
+.puzzle-container { display: flex; gap: 20px; align-items: flex-start; }
+.puzzle-prompt { text-align: center; padding: 10px; font-size: 1.1em; font-weight: 600; margin-bottom: 8px; min-height: 40px; }
+.puzzle-controls { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
+.puzzle-info { flex: 1; }
+.puzzle-stats { background: var(--bg2); border-radius: 10px; padding: 16px; margin-bottom: 12px; display: flex; gap: 20px; }
+.stat { font-size: 0.9em; }
+.stat span { font-weight: bold; color: var(--accent); }
+.puzzle-feedback { background: var(--bg2); border-radius: 10px; padding: 16px; min-height: 100px; font-size: 0.95em; }
+
+/* Practice Tab */
+.practice-container { display: flex; gap: 20px; align-items: flex-start; }
+.practice-controls { flex: 1; background: var(--bg2); border-radius: 10px; padding: 16px; }
+.practice-controls h3 { margin-bottom: 12px; }
+.setting-group { margin-bottom: 12px; }
+.setting-group label { display: block; font-size: 0.85em; color: var(--text2); margin-bottom: 4px; }
+.setting-group select, .setting-group input[type="range"] { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); }
+.practice-feedback { text-align: center; padding: 8px; font-size: 0.9em; min-height: 32px; margin-top: 8px; }
+.game-result { text-align: center; font-size: 1.2em; font-weight: bold; margin-top: 12px; padding: 10px; border-radius: 8px; }
+
+/* Practice Hint Box */
+.practice-hint-box { width: var(--board-size); margin: 6px auto 0; padding: 10px 12px; border-radius: 8px; background: var(--bg3); border-left: 4px solid var(--text2); font-size: 0.88em; transition: border-color 0.3s; }
+.practice-hint-box.hint-blunder { border-left-color: var(--red); }
+.practice-hint-box.hint-mistake { border-left-color: var(--orange); }
+.practice-hint-box.hint-inaccuracy { border-left-color: #ffeb3b; }
+.practice-hint-box.hint-good, .practice-hint-box.hint-excellent { border-left-color: var(--green); }
+.practice-hint-box.hint-best { border-left-color: #2196f3; }
+.practice-hint-box.hint-brilliant { border-left-color: #00e5ff; }
+.practice-hint-box.hint-book { border-left-color: #a0887a; }
+.hint-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.hint-move-text { font-weight: bold; }
+.hint-detail { color: var(--text2); font-size: 0.9em; margin-top: 2px; }
+.hint-wc-container { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.8em; }
+.hint-wc-bar { flex: 1; height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; display: flex; }
+.hint-wc-fill { height: 100%; transition: width 0.3s; }
+.hint-wc-fill.wc-white { background: #e0e0e0; }
+.hint-wc-label { color: var(--text2); white-space: nowrap; min-width: 32px; text-align: right; }
+
+/* Chess Clocks */
+.chess-clock { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 6px; background: var(--bg3); width: var(--board-size); font-family: 'Courier New', monospace; user-select: none; opacity: 0.4; }
+.chess-clock.active { opacity: 1; background: var(--bg2); border: 1px solid var(--bg4); }
+.chess-clock.low-time { border-color: var(--red); }
+.chess-clock.low-time .clock-time { color: var(--red); }
+.chess-clock.flagged .clock-time { color: var(--red); }
+.clock-icon { font-size: 1.1em; }
+.clock-time { font-size: 1.4em; font-weight: bold; margin-left: auto; letter-spacing: 1px; }
+.chess-clock.hidden { visibility: hidden; }
+.clock-row { width: var(--board-size); }
+.captured-pieces { flex: 1; font-size: 0.85em; letter-spacing: -1px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0.85; }
+.captured-pieces .cap-adv { font-size: 0.75em; color: var(--text2); margin-left: 2px; }
+
+/* Promotion dialog */
+.promotion-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+.promotion-dialog { background: var(--bg2); border-radius: 10px; padding: 16px; display: flex; gap: 8px; }
+.promotion-piece { font-size: 48px; cursor: pointer; padding: 8px; border-radius: 8px; transition: background 0.2s; }
+.promotion-piece:hover { background: var(--bg4); }
+
+/* Responsive */
+@media (max-width: 800px) {
+  :root { --board-size: min(360px, calc(100vw - 40px)); }
+  .analyze-container, .puzzle-container, .practice-container { flex-direction: column; }
+  .import-cards { grid-template-columns: 1fr; }
+  .analysis-section { max-height: none; }
+  header { padding: 8px 12px; gap: 10px; }
+}
+/* Player Profile Card */
+.profile-card { background: var(--bg2); border-radius: 12px; padding: 20px; margin-bottom: 20px; display: none; }
+.profile-card.visible { display: block; }
+.profile-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.profile-avatar { width: 72px; height: 72px; border-radius: 50%; border: 3px solid var(--accent); object-fit: cover; background: var(--bg3); }
+.profile-name { font-size: 1.3em; font-weight: bold; }
+.profile-username { color: var(--text2); font-size: 0.9em; }
+.profile-title { display: inline-block; background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 0.75em; font-weight: bold; margin-left: 8px; }
+.profile-title.CM { background: #9c27b0; }
+.profile-title.NM { background: #9c27b0; }
+.profile-title.FM { background: #2196f3; }
+.profile-title.IM { background: #ff9800; }
+.profile-title.GM { background: #f44336; }
+.profile-title.WGM { background: #f44336; }
+.profile-title.WIM { background: #ff9800; }
+.profile-title.WFM { background: #2196f3; }
+.profile-meta { font-size: 0.8em; color: var(--text2); margin-top: 4px; }
+.profile-ratings { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.rating-card { background: var(--bg3); border-radius: 8px; padding: 12px; text-align: center; }
+.rating-card .label { font-size: 0.75em; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.rating-card .value { font-size: 1.5em; font-weight: bold; }
+.rating-card .record { font-size: 0.75em; color: var(--text2); margin-top: 4px; }
+.rating-card .record .w { color: var(--green); }
+.rating-card .record .l { color: var(--red); }
+.rating-card .record .d { color: var(--orange); }
+.rating-card .best { font-size: 0.7em; color: var(--text2); }
+
+/* Report Tab */
+.report-controls { background: var(--bg2); border-radius: 10px; padding: 20px; margin-bottom: 20px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.report-controls .field { display: flex; flex-direction: column; gap: 4px; }
+.report-controls .field label { font-size: 0.8em; color: var(--text2); }
+.report-controls .field select, .report-controls .field input { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); font-size: 0.9em; }
+#report-status { font-size: 0.85em; color: var(--text2); margin-left: 8px; flex: 1; min-width: 200px; }
+.report-content { display: none; }
+.report-content.visible { display: block; }
+.report-overview { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.overview-card { background: var(--bg2); border-radius: 10px; padding: 16px; text-align: center; }
+.overview-card .ov-label { font-size: 0.75em; color: var(--text2); text-transform: uppercase; margin-bottom: 6px; }
+.overview-card .ov-value { font-size: 1.8em; font-weight: bold; }
+.overview-card .ov-sub { font-size: 0.75em; color: var(--text2); margin-top: 4px; }
+.report-section { background: var(--bg2); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+.report-section h3 { margin-bottom: 12px; font-size: 1.1em; border-bottom: 1px solid var(--bg4); padding-bottom: 8px; }
+.strength-item, .weakness-item { padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 0.9em; }
+.strength-item { background: rgba(76,175,80,0.1); border-left: 4px solid var(--green); }
+.weakness-item { background: rgba(244,67,54,0.1); border-left: 4px solid var(--red); }
+.tip-item { background: rgba(33,150,243,0.1); border-left: 4px solid #2196f3; padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; font-size: 0.9em; }
+.phase-bars { display: flex; gap: 16px; margin-top: 8px; }
+.phase-bar { flex: 1; }
+.phase-bar .pb-label { font-size: 0.8em; color: var(--text2); margin-bottom: 4px; }
+.phase-bar .pb-track { height: 24px; background: var(--bg4); border-radius: 4px; overflow: hidden; position: relative; }
+.phase-bar .pb-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+.phase-bar .pb-text { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 0.75em; font-weight: bold; }
+.opening-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 8px; }
+.opening-table th { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--bg4); color: var(--text2); font-weight: 600; }
+.opening-table td { padding: 6px 10px; border-bottom: 1px solid var(--bg3); }
+.opening-table tr:hover td { background: var(--bg3); }
+/* Loading spinner */
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--text2); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-left: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">&#9812; Chess Coach</div>
+    <nav id="main-nav">
+      <button class="tab-btn active" data-tab="import">Import</button>
+      <button class="tab-btn" data-tab="analyze">Analyze</button>
+      <button class="tab-btn" data-tab="report">Report</button>
+      <button class="tab-btn" data-tab="puzzles">Puzzles</button>
+      <button class="tab-btn" data-tab="practice">Practice</button>
+    </nav>
+    <div id="engine-status">Engine: Loading Stockfish 18 NNUE...</div>
+  </header>
+  <main>
+    <!-- IMPORT TAB -->
+    <section id="tab-import" class="tab-panel active">
+      <div class="import-cards">
+        <div class="import-card">
+          <h2>Import from Chess.com</h2>
+          <div class="input-group">
+            <input type="text" id="chess-com-username" placeholder="Chess.com username">
+            <button id="fetch-btn" class="btn-primary">Fetch Games</button>
+          </div>
+          <div id="fetch-status"></div>
+        </div>
+        <div class="import-card">
+          <h2>Or Paste PGN</h2>
+          <textarea id="pgn-input" rows="8" placeholder="Paste one or more PGN games here..."></textarea>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+            <label style="font-size:0.85em;color:var(--text2);white-space:nowrap;">Analyze side:</label>
+            <select id="pgn-player-color" style="padding:6px 12px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);font-size:0.9em;">
+              <option value="w">White</option>
+              <option value="b">Black</option>
+            </select>
+            <button id="load-pgn-btn" class="btn-primary">Load PGN</button>
+          </div>
+        </div>
+      </div>
+      <div id="profile-card" class="profile-card"></div>
+      <div id="games-list" class="games-list"></div>
+    </section>
+
+    <!-- ANALYZE TAB -->
+    <section id="tab-analyze" class="tab-panel">
+      <div class="analyze-container">
+        <div class="board-section">
+          <div class="player-info" id="top-player"></div>
+          <div class="board-wrapper">
+            <div id="eval-bar" class="eval-bar">
+              <div id="eval-fill" class="eval-fill"></div>
+              <div id="eval-text" class="eval-text">0.0</div>
+            </div>
+            <div id="board-analyze" class="chess-board"></div>
+          </div>
+          <div class="player-info" id="bottom-player"></div>
+          <div class="board-controls">
+            <button class="ctrl-btn" id="btn-first" title="First move">&#9198;</button>
+            <button class="ctrl-btn" id="btn-prev" title="Previous">&#9664;</button>
+            <button class="ctrl-btn" id="btn-next" title="Next">&#9654;</button>
+            <button class="ctrl-btn" id="btn-last" title="Last move">&#9197;</button>
+            <button class="ctrl-btn" id="btn-flip" title="Flip board">&#8693;</button>
+          </div>
+        </div>
+        <div class="analysis-section">
+          <div id="move-list" class="move-list"></div>
+          <div id="engine-analysis" class="engine-analysis">
+            <div id="analysis-eval" class="analysis-eval">Load a game to begin</div>
+            <div id="analysis-winchance" class="analysis-winchance"></div>
+            <div id="analysis-best" class="analysis-best"></div>
+            <div id="analysis-comment" class="analysis-comment"></div>
+          </div>
+          <div id="game-summary" class="game-summary" style="display:none"></div>
+          <div class="progress-bar" id="analysis-progress-bar" style="display:none"><div class="progress-fill" id="analysis-progress-fill"></div></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+            <select id="analysis-speed" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);font-size:0.85em;">
+              <option value="fast">⚡ Fast (~30s) — movetime 500ms</option>
+              <option value="normal" selected>⚖️ Normal (~1.5min) — movetime 1500ms</option>
+              <option value="deep">🔬 Deep (~3min) — depth 18</option>
+            </select>
+          </div>
+          <button id="btn-analyze" class="btn-primary" style="width:100%" disabled>Analyze Game</button>
+          <details style="margin-top:10px;font-size:0.78em;color:var(--text2);">
+            <summary style="cursor:pointer;color:var(--text);font-weight:600;">Glossary</summary>
+            <div style="margin-top:8px;line-height:1.6;">
+              <p><strong style="color:var(--text)">CP (Centipawn)</strong> &mdash; Unit of evaluation equal to 1/100th of a pawn. +150 CP means you are ahead by ~1.5 pawns of advantage. The engine uses this to measure who is winning.</p>
+              <p style="margin-top:6px"><strong style="color:var(--text)">ACPL (Average Centipawn Loss)</strong> &mdash; How many centipawns you lose per move on average compared to the engine's best move. Lower is better:<br>
+                &bull; <span style="color:var(--green)">0-30 ACPL</span> = Excellent (GM-level)<br>
+                &bull; <span style="color:#ffeb3b">30-80 ACPL</span> = Good (club player)<br>
+                &bull; <span style="color:var(--orange)">80-150 ACPL</span> = Average (casual player)<br>
+                &bull; <span style="color:var(--red)">150+ ACPL</span> = Needs improvement</p>
+              <p style="margin-top:6px"><strong style="color:var(--text)">Win %</strong> &mdash; Probability of winning from the current position, calculated from the CP evaluation. 50% = equal, 90% = almost certainly winning.</p>
+              <p style="margin-top:6px"><strong style="color:var(--text)">Move Classifications:</strong><br>
+                &bull; <span style="color:#00e5ff">Brilliant</span> = A sacrifice confirmed as the engine's best move<br>
+                &bull; <span style="color:#2196f3">Best</span> = The engine's top choice<br>
+                &bull; <span style="color:var(--green)">Excellent</span> = Very close to best, loses &lt;2% win chance<br>
+                &bull; <span style="color:#66bb6a">Good</span> = Solid move, loses 2-6% win chance<br>
+                &bull; <span style="color:#a0887a">Book</span> = Standard opening theory move<br>
+                &bull; <span style="color:#ffeb3b">Inaccuracy</span> = Slightly imprecise, loses 6-12% win chance<br>
+                &bull; <span style="color:var(--orange)">Mistake</span> = Significant error, loses 12-25% win chance<br>
+                &bull; <span style="color:var(--red)">Blunder</span> = Serious error, loses &gt;25% win chance<br>
+                <em style="color:var(--text2);font-size:0.9em">Note: Moves in already-lost positions are capped at Mistake. Moves that still leave you winning are capped at Inaccuracy.</em></p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORT TAB -->
+    <section id="tab-report" class="tab-panel">
+      <div class="report-controls">
+        <div class="field">
+          <label>Chess.com Username</label>
+          <input type="text" id="report-username" placeholder="username">
+        </div>
+        <div class="field">
+          <label>Time Period</label>
+          <select id="report-period">
+            <option value="1">Last 1 month</option>
+            <option value="3" selected>Last 3 months</option>
+            <option value="6">Last 6 months</option>
+            <option value="12">Last 12 months</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Time Control</label>
+          <select id="report-timecontrol">
+            <option value="all">All</option>
+            <option value="bullet">Bullet</option>
+            <option value="blitz" selected>Blitz</option>
+            <option value="rapid">Rapid</option>
+            <option value="daily">Daily</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Max Games to Analyze</label>
+          <select id="report-maxgames">
+            <option value="5">5 (fast)</option>
+            <option value="10" selected>10</option>
+            <option value="20">20 (thorough)</option>
+            <option value="50">50 (deep)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Analysis Speed</label>
+          <select id="report-speed">
+            <option value="fast" selected>⚡ Fast (500ms/move)</option>
+            <option value="normal">⚖️ Normal (1.2s/move)</option>
+            <option value="deep">🔬 Deep (depth 16)</option>
+          </select>
+        </div>
+        <button id="btn-generate-report" class="btn-primary">Generate Report</button>
+        <div id="report-status"></div>
+      </div>
+      <div class="progress-bar" id="report-progress-bar" style="display:none"><div class="progress-fill" id="report-progress-fill"></div></div>
+      <details style="margin-bottom:16px;font-size:0.78em;color:var(--text2);background:var(--bg2);border-radius:10px;padding:14px;">
+        <summary style="cursor:pointer;color:var(--text);font-weight:600;">How to Read This Report</summary>
+        <div style="margin-top:8px;line-height:1.6;columns:2;column-gap:24px;">
+          <p><strong style="color:var(--text)">Avg CP Loss</strong> &mdash; Average centipawns (1/100 pawn) lost per move vs engine's best. Lower = better play. GM-level is under 30; casual play is 80-150.</p>
+          <p style="margin-top:6px"><strong style="color:var(--text)">ACPL per Phase</strong> &mdash; Same metric broken down by game stage: Opening (moves 1-10), Middlegame (11-25), Endgame (25+). Shows where you lose the most.</p>
+          <p style="margin-top:6px"><strong style="color:var(--text)">Accuracy %</strong> &mdash; Percentage of moves classified as Good or Best. Above 60% is solid; above 75% is strong.</p>
+          <p style="margin-top:6px"><strong style="color:var(--text)">Est. Rating</strong> &mdash; Rough ELO estimate based on your play quality (ACPL). This is approximate &mdash; your actual rating also depends on your opponents.</p>
+          <p style="margin-top:6px"><strong style="color:var(--text)">Blunders / Game</strong> &mdash; Average number of moves per game that lose &gt;20% win chance. Under 1.0 is good; over 2.0 needs work.</p>
+          <p style="margin-top:6px"><strong style="color:var(--text)">Opening Repertoire</strong> &mdash; Your most-played openings with win rate and ACPL. High ACPL on an opening means you may not understand its plans well.</p>
+        </div>
+      </details>
+      <div id="report-content" class="report-content"></div>
+    </section>
+
+    <!-- PUZZLES TAB -->
+    <section id="tab-puzzles" class="tab-panel">
+      <div class="puzzle-container">
+        <div class="board-section">
+          <div id="puzzle-prompt" class="puzzle-prompt">Analyze a game first to generate puzzles</div>
+          <div class="board-wrapper">
+            <div id="board-puzzles" class="chess-board"></div>
+          </div>
+          <div class="puzzle-controls">
+            <button id="btn-hint" class="btn-secondary" disabled>Hint</button>
+            <button id="btn-solution" class="btn-secondary" disabled>Show Solution</button>
+            <button id="btn-next-puzzle" class="btn-primary" disabled>Next Puzzle</button>
+          </div>
+        </div>
+        <div class="puzzle-info">
+          <div class="puzzle-stats">
+            <div class="stat">Solved: <span id="puzzles-solved">0</span></div>
+            <div class="stat">Failed: <span id="puzzles-failed">0</span></div>
+            <div class="stat">Accuracy: <span id="puzzle-accuracy">-</span></div>
+          </div>
+          <div id="puzzle-feedback" class="puzzle-feedback">Puzzles will be generated from your game mistakes.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PRACTICE TAB -->
+    <section id="tab-practice" class="tab-panel">
+      <div class="practice-container">
+        <div class="board-section">
+          <div class="clock-row">
+            <div id="clock-top" class="chess-clock">
+              <span class="clock-icon">&#9812;</span>
+              <span class="captured-pieces" id="captured-top"></span>
+              <span class="clock-time" id="clock-top-time">--:--</span>
+            </div>
+          </div>
+          <div class="board-wrapper">
+            <div id="board-practice" class="chess-board"></div>
+          </div>
+          <div class="clock-row">
+            <div id="clock-bottom" class="chess-clock">
+              <span class="clock-icon">&#9812;</span>
+              <span class="captured-pieces" id="captured-bottom"></span>
+              <span class="clock-time" id="clock-bottom-time">--:--</span>
+            </div>
+          </div>
+          <div id="practice-feedback" class="practice-feedback"></div>
+          <div id="practice-hint-box" class="practice-hint-box" style="display:none;">
+            <div class="hint-header">
+              <span id="hint-badge"></span>
+              <span id="hint-move-text" class="hint-move-text"></span>
+            </div>
+            <div id="hint-detail" class="hint-detail"></div>
+            <div class="hint-wc-container">
+              <span class="hint-wc-label" id="hint-wc-label"></span>
+              <div class="hint-wc-bar">
+                <div class="hint-wc-fill wc-white" id="hint-wc-fill"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="practice-controls">
+          <h3>Practice Game</h3>
+          <div class="setting-group">
+            <label>Play as:</label>
+            <select id="practice-color"><option value="w">White</option><option value="b">Black</option></select>
+          </div>
+          <div class="setting-group">
+            <label>Engine Difficulty: <span id="difficulty-label">10</span> <span id="difficulty-elo" style="color:var(--text2);font-size:0.85em">(~1800 ELO)</span></label>
+            <input type="range" id="practice-difficulty" min="0" max="20" value="10">
+          </div>
+          <div class="setting-group">
+            <label>Time Control:</label>
+            <select id="practice-timecontrol">
+              <option value="none">No Timer</option>
+              <option value="1+0">1+0 (Bullet)</option>
+              <option value="2+1">2+1 (Bullet)</option>
+              <option value="3+0">3+0 (Blitz)</option>
+              <option value="3+2">3+2 (Blitz)</option>
+              <option value="5+0">5+0 (Blitz)</option>
+              <option value="5+3">5+3 (Blitz)</option>
+              <option value="10+0" selected>10+0 (Rapid)</option>
+              <option value="15+10">15+10 (Rapid)</option>
+              <option value="30+0">30+0 (Classical)</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </div>
+          <div id="custom-time-group" class="setting-group" style="display:none;">
+            <div style="display:flex;gap:10px;">
+              <div style="flex:1;">
+                <label style="font-size:0.8em;color:var(--text2);">Base time (min)</label>
+                <input type="number" id="custom-time-base" min="0.5" max="180" value="10" step="0.5" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);">
+              </div>
+              <div style="flex:1;">
+                <label style="font-size:0.8em;color:var(--text2);">Increment (sec)</label>
+                <input type="number" id="custom-time-inc" min="0" max="60" value="0" step="1" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);">
+              </div>
+            </div>
+          </div>
+          <div class="setting-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              Move Hints
+              <input type="checkbox" id="practice-hints-toggle">
+              <span style="font-size:0.85em;color:var(--text2);font-weight:normal;">(analyze each move)</span>
+            </label>
+          </div>
+          <div style="background:var(--bg3);border-radius:8px;padding:10px;margin-bottom:12px;font-size:0.78em;">
+            <table style="width:100%;border-collapse:collapse;color:var(--text2);">
+              <tr><th style="text-align:left;padding:2px 6px;">Level</th><th style="text-align:left;padding:2px 6px;">~ ELO</th><th style="text-align:left;padding:2px 6px;">Strength</th></tr>
+              <tr><td style="padding:2px 6px;">0</td><td style="padding:2px 6px;">~800</td><td style="padding:2px 6px;">Beginner</td></tr>
+              <tr><td style="padding:2px 6px;">5</td><td style="padding:2px 6px;">~1200</td><td style="padding:2px 6px;">Casual player</td></tr>
+              <tr><td style="padding:2px 6px;">10</td><td style="padding:2px 6px;">~1800</td><td style="padding:2px 6px;">Strong club player</td></tr>
+              <tr><td style="padding:2px 6px;">15</td><td style="padding:2px 6px;">~2200</td><td style="padding:2px 6px;">Expert / CM</td></tr>
+              <tr><td style="padding:2px 6px;">20</td><td style="padding:2px 6px;">~3000+</td><td style="padding:2px 6px;">Full Stockfish 18 NNUE</td></tr>
+            </table>
+          </div>
+          <button id="btn-new-game" class="btn-primary" style="width:100%;margin-bottom:8px">New Game</button>
+          <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <button id="btn-takeback" class="btn-secondary" style="flex:1" disabled>Take Back</button>
+            <button id="btn-draw" class="btn-secondary" style="flex:1" disabled>Offer Draw</button>
+          </div>
+          <div id="practice-move-list" class="move-list" style="margin-top:12px;max-height:200px"></div>
+          <div id="game-result" class="game-result"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+// ============================================================
+//  PIECE UNICODE MAP
+// ============================================================
+const PIECES = {
+  K:'&#9812;', Q:'&#9813;', R:'&#9814;', B:'&#9815;', N:'&#9816;', P:'&#9817;',
+  k:'&#9818;', q:'&#9819;', r:'&#9820;', b:'&#9821;', n:'&#9822;', p:'&#9823;'
+};
+const FILES = 'abcdefgh';
+
+// ============================================================
+//  BOARD CLASS
+// ============================================================
+class Board {
+  constructor(containerId) {
+    this.container = document.getElementById(containerId);
+    this.flipped = false;
+    this.squares = {};
+    this.position = null; // FEN position part
+    this.interactive = false;
+    this.chess = null;
+    this.onMoveCallback = null;
+    this.selectedSquare = null;
+    this.dragPiece = null;
+    this.dragFrom = null;
+    this.lastMoveFrom = null;
+    this.lastMoveTo = null;
+    this._buildBoard();
+    this.setPosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+  }
+
+  _buildBoard() {
+    this.container.innerHTML = '';
+    for (let r = 0; r < 8; r++) {
+      for (let f = 0; f < 8; f++) {
+        const sq = document.createElement('div');
+        const rank = this.flipped ? r : 7 - r;
+        const file = this.flipped ? 7 - f : f;
+        const name = FILES[file] + (rank + 1);
+        const isLight = (rank + file) % 2 === 1;
+        sq.className = 'square ' + (isLight ? 'light' : 'dark');
+        sq.dataset.square = name;
+        // Coordinates
+        if (f === 0) {
+          const c = document.createElement('span');
+          c.className = 'coord coord-rank';
+          c.textContent = rank + 1;
+          sq.appendChild(c);
+        }
+        if (r === 7) {
+          const c = document.createElement('span');
+          c.className = 'coord coord-file';
+          c.textContent = FILES[file];
+          sq.appendChild(c);
+        }
+        this.container.appendChild(sq);
+        this.squares[name] = sq;
+      }
+    }
+    this._bindEvents();
+  }
+
+  _bindEvents() {
+    let startX, startY;
+    const onStart = (e) => {
+      if (!this.interactive) return;
+      const touch = e.touches ? e.touches[0] : e;
+      const sq = touch.target.closest('.square');
+      if (!sq) return;
+      const name = sq.dataset.square;
+      const piece = this.chess.get(name);
+
+      if (this.selectedSquare) {
+        // Try to move
+        const moved = this._tryMove(this.selectedSquare, name);
+        this._clearSelection();
+        if (moved) return;
+      }
+
+      if (!piece || piece.color !== this.chess.turn()) return;
+      if (this._playerColor && piece.color !== this._playerColor) return;
+
+      this.selectedSquare = name;
+      sq.classList.add('selected');
+      this._showHints(name);
+
+      // Start drag
+      const pieceEl = sq.querySelector('.piece');
+      if (!pieceEl) return;
+      this.dragPiece = pieceEl;
+      this.dragFrom = name;
+      const rect = pieceEl.getBoundingClientRect();
+      startX = touch.clientX;
+      startY = touch.clientY;
+
+      const onMove = (e2) => {
+        e2.preventDefault();
+        const t = e2.touches ? e2.touches[0] : e2;
+        const dx = t.clientX - startX;
+        const dy = t.clientY - startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+          this.dragPiece.classList.add('dragging');
+          this.dragPiece.style.left = (rect.left + dx) + 'px';
+          this.dragPiece.style.top = (rect.top + dy) + 'px';
+          this.dragPiece.style.width = rect.width + 'px';
+        }
+      };
+      const onEnd = (e2) => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onEnd);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onEnd);
+        if (this.dragPiece) {
+          this.dragPiece.classList.remove('dragging');
+          this.dragPiece.style.left = '';
+          this.dragPiece.style.top = '';
+          this.dragPiece.style.width = '';
+        }
+        const t = e2.changedTouches ? e2.changedTouches[0] : e2;
+        const el = document.elementFromPoint(t.clientX, t.clientY);
+        const targetSq = el ? el.closest('.square') : null;
+        if (targetSq && targetSq.dataset.square !== this.dragFrom) {
+          this._tryMove(this.dragFrom, targetSq.dataset.square);
+          this._clearSelection();
+        }
+        this.dragPiece = null;
+        this.dragFrom = null;
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onEnd);
+      document.addEventListener('touchmove', onMove, {passive: false});
+      document.addEventListener('touchend', onEnd);
+    };
+    this.container.addEventListener('mousedown', onStart);
+    this.container.addEventListener('touchstart', onStart, {passive: false});
+  }
+
+  _showHints(from) {
+    const moves = this.chess.moves({square: from, verbose: true});
+    for (const m of moves) {
+      const sq = this.squares[m.to];
+      if (!sq) continue;
+      const hint = document.createElement('div');
+      hint.className = m.captured ? 'capture-hint' : 'move-hint';
+      sq.appendChild(hint);
+    }
+  }
+
+  _clearSelection() {
+    for (const sq of Object.values(this.squares)) {
+      sq.classList.remove('selected');
+      sq.querySelectorAll('.move-hint, .capture-hint').forEach(h => h.remove());
+    }
+    this.selectedSquare = null;
+  }
+
+  _tryMove(from, to) {
+    // Check for promotion
+    const piece = this.chess.get(from);
+    if (piece && piece.type === 'p') {
+      const targetRank = to[1];
+      if ((piece.color === 'w' && targetRank === '8') || (piece.color === 'b' && targetRank === '1')) {
+        this._showPromotion(from, to);
+        return true;
+      }
+    }
+    const move = this.chess.move({from, to, promotion: 'q'});
+    if (!move) return false;
+    this.setPosition(this.chess.fen());
+    this.setLastMove(from, to);
+    if (this.onMoveCallback) this.onMoveCallback(move);
+    return true;
+  }
+
+  _showPromotion(from, to) {
+    const color = this.chess.turn();
+    const overlay = document.createElement('div');
+    overlay.className = 'promotion-overlay';
+    const dialog = document.createElement('div');
+    dialog.className = 'promotion-dialog';
+    for (const p of ['q','r','b','n']) {
+      const btn = document.createElement('div');
+      btn.className = 'promotion-piece';
+      const key = color === 'w' ? p.toUpperCase() : p;
+      btn.innerHTML = PIECES[key];
+      btn.onclick = () => {
+        overlay.remove();
+        const move = this.chess.move({from, to, promotion: p});
+        if (move) {
+          this.setPosition(this.chess.fen());
+          this.setLastMove(from, to);
+          if (this.onMoveCallback) this.onMoveCallback(move);
+        }
+      };
+      dialog.appendChild(btn);
+    }
+    overlay.appendChild(dialog);
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
+  }
+
+  setPosition(fen) {
+    const parts = fen.split(' ');
+    const position = parts[0];
+    const rows = position.split('/');
+    // Clear pieces
+    for (const sq of Object.values(this.squares)) {
+      const p = sq.querySelector('.piece');
+      if (p) p.remove();
+    }
+    for (let r = 0; r < 8; r++) {
+      let f = 0;
+      for (const ch of rows[r]) {
+        if (ch >= '1' && ch <= '8') { f += parseInt(ch); continue; }
+        const rank = 8 - r;
+        const file = FILES[f];
+        const sqName = file + rank;
+        const sq = this.squares[sqName];
+        if (sq) {
+          const el = document.createElement('span');
+          const isWhitePiece = ch === ch.toUpperCase();
+          el.className = 'piece ' + (isWhitePiece ? 'white-piece' : 'black-piece');
+          el.innerHTML = PIECES[ch];
+          sq.appendChild(el);
+        }
+        f++;
+      }
+    }
+    // Check highlight
+    for (const sq of Object.values(this.squares)) sq.classList.remove('check');
+    if (parts.length > 1) {
+      const tempChess = new Chess(fen);
+      if (tempChess.in_check()) {
+        const turn = tempChess.turn();
+        const board = tempChess.board();
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const p = board[r][c];
+            if (p && p.type === 'k' && p.color === turn) {
+              const sqName = FILES[c] + (8 - r);
+              this.squares[sqName]?.classList.add('check');
+            }
+          }
+        }
+      }
+    }
+  }
+
+  setLastMove(from, to) {
+    for (const sq of Object.values(this.squares)) sq.classList.remove('last-move');
+    if (from && this.squares[from]) this.squares[from].classList.add('last-move');
+    if (to && this.squares[to]) this.squares[to].classList.add('last-move');
+    this.lastMoveFrom = from;
+    this.lastMoveTo = to;
+  }
+
+  clearHighlightClasses() {
+    for (const sq of Object.values(this.squares)) {
+      sq.classList.remove('highlight-blunder','highlight-mistake','highlight-inaccuracy','highlight-best','highlight-brilliant','highlight-excellent');
+    }
+  }
+
+  highlightSquare(sqName, cls) {
+    if (this.squares[sqName]) this.squares[sqName].classList.add(cls);
+  }
+
+  enableInteraction(chess, callback, playerColor) {
+    this.chess = chess;
+    this.interactive = true;
+    this.onMoveCallback = callback;
+    this._playerColor = playerColor || null;
+  }
+
+  disableInteraction() {
+    this.interactive = false;
+    this.onMoveCallback = null;
+    this._playerColor = null;
+    this._clearSelection();
+  }
+
+  flip() {
+    this.flipped = !this.flipped;
+    this._buildBoard();
+    if (this.chess) this.setPosition(this.chess.fen());
+    else this.setPosition('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1');
+    if (this.lastMoveFrom) this.setLastMove(this.lastMoveFrom, this.lastMoveTo);
+  }
+}
+
+// ============================================================
+//  STOCKFISH ENGINE WRAPPER
+// ============================================================
+class Engine {
+  constructor() {
+    this.worker = null;
+    this.ready = false;
+    this.analyzing = false;
+    this.currentResolve = null;
+    this.currentAnalysis = {};
+    this.messageBuffer = [];
+  }
+
+  async init() {
+    // Load Stockfish 18 WASM with NNUE (lite single-threaded, ~7MB)
+    // Must be served via HTTP (e.g. python -m http.server 8765)
+    this.worker = new Worker('stockfish-18-lite-single.js');
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Engine init timeout')), 30000);
+      this.worker.onmessage = (e) => {
+        const line = typeof e.data === 'string' ? e.data : '';
+        if (line === 'uciok') {
+          clearTimeout(timeout);
+          this.ready = true;
+          this.worker.postMessage('isready');
+        }
+        if (line === 'readyok') {
+          this.worker.onmessage = (e) => this._onMessage(e);
+          resolve();
+        }
+      };
+      this.worker.onerror = (e) => { clearTimeout(timeout); reject(e); };
+      this.worker.postMessage('uci');
+    });
+  }
+
+  _onMessage(e) {
+    const line = typeof e.data === 'string' ? e.data : '';
+    if (line.startsWith('info') && line.includes('depth')) {
+      this._parseInfo(line);
+    }
+    if (line.startsWith('bestmove')) {
+      const parts = line.split(' ');
+      this.currentAnalysis.bestMoveUCI = parts[1] || '';
+      this.analyzing = false;
+      if (this.currentResolve) {
+        this.currentResolve({...this.currentAnalysis});
+        this.currentResolve = null;
+      }
+    }
+  }
+
+  _parseInfo(line) {
+    const depthMatch = line.match(/\bdepth (\d+)/);
+    const scoreMatch = line.match(/\bscore (cp|mate) (-?\d+)/);
+    const pvMatch = line.match(/\bpv (.+)/);
+    const depth = depthMatch ? parseInt(depthMatch[1]) : 0;
+    if (depth < (this.currentAnalysis.depth || 0)) return; // skip lower depths
+    if (depthMatch) this.currentAnalysis.depth = depth;
+    if (scoreMatch) {
+      if (scoreMatch[1] === 'cp') {
+        this.currentAnalysis.score = parseInt(scoreMatch[2]);
+        this.currentAnalysis.mate = null;
+      } else {
+        this.currentAnalysis.mate = parseInt(scoreMatch[2]);
+        this.currentAnalysis.score = parseInt(scoreMatch[2]) > 0 ? 30000 - parseInt(scoreMatch[2]) * 100 : -30000 - parseInt(scoreMatch[2]) * 100;
+      }
+    }
+    if (pvMatch) this.currentAnalysis.pv = pvMatch[1].trim();
+  }
+
+  async evaluate(fen, depthOrOpts = 16) {
+    if (!this.ready) throw new Error('Engine not ready');
+    this.stop();
+    return new Promise((resolve) => {
+      this.currentAnalysis = {depth: 0, score: 0, mate: null, pv: '', bestMoveUCI: ''};
+      this.currentResolve = resolve;
+      this.analyzing = true;
+      this.worker.postMessage('position fen ' + fen);
+      if (typeof depthOrOpts === 'object' && depthOrOpts.wtime !== undefined) {
+        // Time-based search for practice games with clock
+        this.worker.postMessage(`go wtime ${depthOrOpts.wtime} btime ${depthOrOpts.btime} winc ${depthOrOpts.winc || 0} binc ${depthOrOpts.binc || 0}`);
+      } else if (typeof depthOrOpts === 'object' && depthOrOpts.movetime) {
+        this.worker.postMessage('go movetime ' + depthOrOpts.movetime);
+      } else {
+        this.worker.postMessage('go depth ' + (typeof depthOrOpts === 'number' ? depthOrOpts : 16));
+      }
+    });
+  }
+
+  async getBestMove(fen, depth = 12) {
+    const result = await this.evaluate(fen, depth);
+    return result.bestMoveUCI;
+  }
+
+  stop() {
+    if (this.analyzing) {
+      this.worker.postMessage('stop');
+      this.analyzing = false;
+      if (this.currentResolve) {
+        this.currentResolve({...this.currentAnalysis});
+        this.currentResolve = null;
+      }
+    }
+  }
+
+  setSkillLevel(level) {
+    this.worker.postMessage('setoption name Skill Level value ' + level);
+  }
+
+  quit() {
+    if (this.worker) {
+      this.worker.postMessage('quit');
+      this.worker.terminate();
+    }
+  }
+}
+
+// ============================================================
+//  UTILITY FUNCTIONS
+// ============================================================
+function evalToWhite(score, sideToMove) {
+  return sideToMove === 'w' ? score : -score;
+}
+
+function evalToPercent(cpWhite) {
+  return 50 + 50 * Math.tanh(cpWhite / 600);
+}
+
+// Cap score to avoid mate-score explosions in eval drop calculation
+function cappedScore(score, mate) {
+  if (mate !== null && mate !== undefined) {
+    return mate > 0 ? 1500 : -1500;
+  }
+  return Math.max(-1500, Math.min(1500, score));
+}
+
+// Win probability (0-100%) based on centipawns from white's perspective
+// Uses the Lichess win-chance formula for accurate move classification
+function winChance(cpWhite) {
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cpWhite)) - 1);
+}
+
+function formatEval(analysis) {
+  if (analysis.mate !== null && analysis.mate !== undefined) {
+    return 'M' + Math.abs(analysis.mate);
+  }
+  return (analysis.score / 100).toFixed(1);
+}
+
+// Classify moves by win-chance drop (%) — Chess.com-aligned logic
+// opts: { moveIndex, san, isCapture, isSacrifice, bestMoveUCI, playedMoveUCI,
+//         wcBefore: player win% before move, wcAfter: player win% after move }
+function classifyMove(winChanceDrop, opts = {}) {
+  const { moveIndex = 999, san = '', isCapture = false, isSacrifice = false,
+          bestMoveUCI = '', playedMoveUCI = '',
+          wcBefore = 50, wcAfter = 50 } = opts;
+
+  // Book moves: first 10 half-moves (moves 1-5 for each side)
+  if (moveIndex < 10 && winChanceDrop < 12) return 'book';
+
+  // === Phase-aware thresholds (calibrated against Chess.com) ===
+  // Opening (first 24 half-moves / 12 full moves): engine evals are noisier
+  const isOpening = moveIndex < 24;
+
+  // Thresholds: [blunder, mistake, inaccuracy]
+  // Chess.com uses Stockfish 16+ NNUE at depth 18+; we now use Stockfish 18 NNUE (lite).
+  // Phase-aware thresholds and context-aware caps for Chess.com-like classifications.
+  const thresholds = isOpening
+    ? [35, 14, 7]     // Opening: high blunder bar (engine noise), moderate mistake bar
+    : [25, 12, 6];    // Middlegame/endgame: Chess.com-aligned
+
+  // === Context-aware caps (Chess.com style) ===
+  // 1. Already losing badly (<15% win chance) → cap at mistake
+  const alreadyLost = wcBefore < 15;
+  // 2. Still comfortably winning after → cap at inaccuracy (not a real blunder)
+  const stillWinning = wcBefore > 80 && wcAfter > 60;
+
+  // Determine raw classification
+  let raw;
+  if (winChanceDrop > thresholds[0]) raw = 'blunder';
+  else if (winChanceDrop > thresholds[1]) raw = 'mistake';
+  else if (winChanceDrop > thresholds[2]) raw = 'inaccuracy';
+  else raw = null; // positive or neutral
+
+  // Apply context caps
+  if (raw === 'blunder' && alreadyLost) raw = 'mistake';
+  if (raw === 'blunder' && stillWinning) raw = 'inaccuracy';
+  if (raw === 'mistake' && stillWinning) raw = 'inaccuracy';
+  if (raw === 'mistake' && alreadyLost && wcBefore < 8) raw = 'inaccuracy';
+
+  if (raw) return raw;
+
+  // Positive move classifications
+  const isTopMove = bestMoveUCI && playedMoveUCI && bestMoveUCI === playedMoveUCI;
+  if (isTopMove) {
+    if (isSacrifice) return 'brilliant';
+    return 'best';
+  }
+
+  // Excellent: very close to best (< 2% drop) but not the top move
+  if (winChanceDrop < 2) return 'excellent';
+
+  // Good: decent move (2-threshold[2]% loss)
+  return 'good';
+}
+
+// Detect if a move is a sacrifice (capture by a higher-value piece, or moving into capture)
+function isSacrificialMove(chess, san) {
+  // Simple heuristic: if the move leaves a piece en prise to a lower-value piece
+  // For now, detect obvious sacrifices: moving a piece to a square defended by a lower-value piece
+  // or exchanging down in material
+  const PIECE_VALUES = {p: 1, n: 3, b: 3, r: 5, q: 9, k: 0};
+  const moves = chess.moves({verbose: true});
+  const played = moves.find(m => m.san === san);
+  if (!played) return false;
+  // If we captured a lower-value piece with a higher-value one, it might be a sacrifice
+  if (played.captured) {
+    const capValue = PIECE_VALUES[played.captured] || 0;
+    const pieceValue = PIECE_VALUES[played.piece] || 0;
+    if (pieceValue > capValue + 1) return true; // e.g. queen takes pawn
+  }
+  // Check if the destination square is attacked by opponent
+  // (simplified: if opponent can recapture)
+  const tempChess = new Chess(chess.fen());
+  tempChess.move(san);
+  const opponentMoves = tempChess.moves({verbose: true});
+  const recapture = opponentMoves.find(m => m.to === played.to && m.captured);
+  if (recapture) {
+    const ourPieceVal = PIECE_VALUES[played.piece] || 0;
+    const theirPieceVal = PIECE_VALUES[recapture.piece] || 0;
+    if (ourPieceVal > theirPieceVal + 1) return true;
+  }
+  return false;
+}
+
+function uciToSan(chess, uci) {
+  if (!uci || uci.length < 4) return uci;
+  const from = uci.substring(0, 2);
+  const to = uci.substring(2, 4);
+  const promo = uci.length > 4 ? uci[4] : undefined;
+  const tempChess = new Chess(chess.fen());
+  const move = tempChess.move({from, to, promotion: promo});
+  return move ? move.san : uci;
+}
+
+function parsePGNGames(text) {
+  // Split multi-game PGN text into individual games
+  const games = [];
+  const lines = text.split('\n');
+  let current = [];
+  let inGame = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('[Event ')) {
+      if (current.length > 0 && inGame) {
+        games.push(current.join('\n'));
+      }
+      current = [line];
+      inGame = true;
+    } else {
+      if (inGame || trimmed.length > 0) current.push(line);
+    }
+  }
+  if (current.length > 0 && inGame) games.push(current.join('\n'));
+
+  // If no [Event] headers found, try treating the whole text as a single game
+  if (games.length === 0 && text.trim().length > 0) {
+    // Check if it looks like chess moves (starts with "1." or a PGN header "[")
+    const trimmed = text.trim();
+    if (trimmed.match(/^1\.\s*\S/) || trimmed.startsWith('[')) {
+      games.push(trimmed);
+    }
+  }
+  return games;
+}
+
+function extractHeader(pgn, header) {
+  const match = pgn.match(new RegExp('\\[' + header + '\\s+"([^"]*)"\\]'));
+  return match ? match[1] : '';
+}
+
+// ============================================================
+//  MAIN APPLICATION
+// ============================================================
+class App {
+  constructor() {
+    this.engine = new Engine();
+    this.boards = {};
+    this.games = []; // Array of {pgn, white, black, whiteRating, blackRating, result, timeControl, date}
+    this.currentGameIndex = -1;
+    this.analysis = null; // Array of move analyses for current game
+    this.currentMoveIndex = -1; // -1 = starting position
+    this.gameChess = null; // Chess instance for current game replay
+    this.gameMoves = [];
+    this.gamePositions = []; // FEN at each position [startFen, afterMove0, afterMove1, ...]
+    this.puzzles = [];
+    this.currentPuzzleIndex = -1;
+    this.puzzleChess = null;
+    this.puzzlesSolved = 0;
+    this.puzzlesFailed = 0;
+    this.practiceChess = null;
+    this.practiceColor = 'w';
+    // Timer state
+    this.practiceTimerEnabled = false;
+    this.practiceTimers = { w: 0, b: 0 };
+    this.practiceIncrement = 0;
+    this.practiceTimerInterval = null;
+    this.practiceActiveClock = null; // 'w' or 'b'
+    this.practiceLastTickTime = 0;
+    this.practiceHintsEnabled = false;
+    this.practiceFenHistory = [];
+    this.practiceMoveClassifications = [];
+    this.practiceHintPending = false; // prevent overlapping hint evals
+    this.practiceHintGeneration = 0; // generation counter to cancel stale hint evals
+    this.username = '';
+  }
+
+  async init() {
+    // Build boards
+    this.boards.analyze = new Board('board-analyze');
+    this.boards.puzzles = new Board('board-puzzles');
+    this.boards.practice = new Board('board-practice');
+
+    // Init engine
+    const statusEl = document.getElementById('engine-status');
+    try {
+      await this.engine.init();
+      statusEl.textContent = 'Engine: Stockfish 18 NNUE ✓';
+      statusEl.className = 'ready';
+      document.getElementById('btn-analyze').disabled = false;
+    } catch (e) {
+      statusEl.textContent = 'Engine: Failed to load';
+      statusEl.className = 'error';
+      console.error('Engine error:', e);
+    }
+
+    this._bindUI();
+  }
+
+  _bindUI() {
+    // Tab navigation
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+    });
+
+    // Import
+    document.getElementById('fetch-btn').addEventListener('click', () => {
+      const username = document.getElementById('chess-com-username').value.trim();
+      if (username) this.fetchChessComGames(username);
+    });
+    document.getElementById('chess-com-username').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('fetch-btn').click();
+    });
+    document.getElementById('load-pgn-btn').addEventListener('click', () => {
+      const text = document.getElementById('pgn-input').value.trim();
+      if (text) this.loadPGNText(text);
+    });
+
+    // Analysis controls
+    document.getElementById('btn-first').addEventListener('click', () => this.goToMove(-1));
+    document.getElementById('btn-prev').addEventListener('click', () => this.goToMove(this.currentMoveIndex - 1));
+    document.getElementById('btn-next').addEventListener('click', () => this.goToMove(this.currentMoveIndex + 1));
+    document.getElementById('btn-last').addEventListener('click', () => this.goToMove(this.gameMoves.length - 1));
+    document.getElementById('btn-flip').addEventListener('click', () => this.boards.analyze.flip());
+    document.getElementById('btn-analyze').addEventListener('click', () => this.analyzeCurrentGame());
+
+    // Keyboard nav
+    document.addEventListener('keydown', (e) => {
+      const tab = document.querySelector('.tab-panel.active')?.id;
+      if (tab === 'tab-analyze') {
+        if (e.key === 'ArrowLeft') this.goToMove(this.currentMoveIndex - 1);
+        if (e.key === 'ArrowRight') this.goToMove(this.currentMoveIndex + 1);
+        if (e.key === 'Home') this.goToMove(-1);
+        if (e.key === 'End') this.goToMove(this.gameMoves.length - 1);
+      }
+    });
+
+    // Puzzles
+    document.getElementById('btn-hint').addEventListener('click', () => this.showPuzzleHint());
+    document.getElementById('btn-solution').addEventListener('click', () => this.showPuzzleSolution());
+    document.getElementById('btn-next-puzzle').addEventListener('click', () => this.nextPuzzle());
+
+    // Practice
+    document.getElementById('practice-difficulty').addEventListener('input', (e) => {
+      const lvl = parseInt(e.target.value);
+      document.getElementById('difficulty-label').textContent = lvl;
+      const eloMap = {0:'~800',1:'~850',2:'~900',3:'~950',4:'~1050',5:'~1200',6:'~1300',7:'~1400',8:'~1500',9:'~1650',10:'~1800',11:'~1900',12:'~2000',13:'~2050',14:'~2100',15:'~2200',16:'~2350',17:'~2500',18:'~2650',19:'~2800',20:'~3000+'};
+      document.getElementById('difficulty-elo').textContent = '(' + (eloMap[lvl]||'?') + ' ELO)';
+    });
+    document.getElementById('btn-new-game').addEventListener('click', () => this.startPractice());
+    document.getElementById('btn-takeback').addEventListener('click', () => this.practiceTakeback());
+    document.getElementById('btn-draw').addEventListener('click', () => this.practiceOfferDraw());
+    document.getElementById('practice-timecontrol').addEventListener('change', (e) => {
+      document.getElementById('custom-time-group').style.display = e.target.value === 'custom' ? 'block' : 'none';
+    });
+
+    // Report
+    document.getElementById('btn-generate-report').addEventListener('click', () => this.generateReport());
+    // Auto-fill report username from import
+    document.getElementById('chess-com-username').addEventListener('change', (e) => {
+      document.getElementById('report-username').value = e.target.value;
+    });
+  }
+
+  switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
+  }
+
+  // =================== IMPORT ===================
+
+  async fetchChessComGames(username) {
+    this.username = username.toLowerCase();
+    const statusEl = document.getElementById('fetch-status');
+    const fetchBtn = document.getElementById('fetch-btn');
+    statusEl.innerHTML = 'Fetching profile &amp; games...<span class="spinner"></span>';
+    fetchBtn.disabled = true;
+
+    try {
+      // Fetch profile + stats + archives in parallel
+      const [profileResp, statsResp, archResp] = await Promise.all([
+        fetch(`https://api.chess.com/pub/player/${this.username}`),
+        fetch(`https://api.chess.com/pub/player/${this.username}/stats`),
+        fetch(`https://api.chess.com/pub/player/${this.username}/games/archives`)
+      ]);
+
+      if (!profileResp.ok) throw new Error('Player not found or API error');
+      const profile = await profileResp.json();
+      const stats = statsResp.ok ? await statsResp.json() : {};
+      const archData = archResp.ok ? await archResp.json() : {archives: []};
+
+      // Render profile card
+      this._renderProfile(profile, stats);
+
+      const archives = archData.archives || [];
+      if (archives.length === 0) throw new Error('No games found for this player');
+
+      // Fetch last 2 months
+      statusEl.innerHTML = 'Fetching recent games...<span class="spinner"></span>';
+      const recentArchives = archives.slice(-2);
+      let allGames = [];
+      for (const url of recentArchives) {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const data = await resp.json();
+          allGames = allGames.concat(data.games || []);
+        }
+      }
+
+      if (allGames.length === 0) throw new Error('No games found in recent months');
+
+      // Take last 50 games
+      allGames = allGames.slice(-50);
+      this.games = allGames.map(g => ({
+        pgn: g.pgn,
+        white: g.white?.username || '?',
+        black: g.black?.username || '?',
+        whiteRating: g.white?.rating || '?',
+        blackRating: g.black?.rating || '?',
+        whiteResult: g.white?.result || '',
+        blackResult: g.black?.result || '',
+        timeControl: g.time_control || '?',
+        url: g.url || ''
+      }));
+
+      statusEl.textContent = `Found ${this.games.length} recent games`;
+      this._renderGamesList();
+    } catch (e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      statusEl.style.color = 'var(--red)';
+    }
+    fetchBtn.disabled = false;
+  }
+
+  _renderProfile(profile, stats) {
+    const card = document.getElementById('profile-card');
+    const joined = profile.joined ? new Date(profile.joined * 1000).toLocaleDateString('en-US', {year:'numeric', month:'short'}) : '';
+    const lastOnline = profile.last_online ? new Date(profile.last_online * 1000).toLocaleDateString('en-US', {year:'numeric', month:'short', day:'numeric'}) : '';
+    const titleClass = profile.title || '';
+
+    // Build ratings HTML
+    const ratingTypes = [
+      {key: 'chess_bullet', label: 'Bullet', icon: '&#9889;'},
+      {key: 'chess_blitz', label: 'Blitz', icon: '&#9889;&#9889;'},
+      {key: 'chess_rapid', label: 'Rapid', icon: '&#9201;'},
+      {key: 'chess_daily', label: 'Daily', icon: '&#9993;'},
+      {key: 'tactics', label: 'Tactics', icon: '&#9876;'},
+      {key: 'puzzle_rush', label: 'Puzzle Rush', icon: '&#127942;'}
+    ];
+
+    let ratingsHTML = '';
+    for (const rt of ratingTypes) {
+      const data = stats[rt.key];
+      if (!data) continue;
+
+      if (rt.key === 'tactics') {
+        const highest = data.highest?.rating || data.best?.rating || '-';
+        ratingsHTML += `<div class="rating-card">
+          <div class="label">${rt.icon} ${rt.label}</div>
+          <div class="value">${highest}</div>
+          <div class="best">Highest</div>
+        </div>`;
+      } else if (rt.key === 'puzzle_rush') {
+        const best = data.best?.score ?? '-';
+        ratingsHTML += `<div class="rating-card">
+          <div class="label">${rt.icon} ${rt.label}</div>
+          <div class="value">${best}</div>
+          <div class="best">Best Score</div>
+        </div>`;
+      } else {
+        const rating = data.last?.rating || '-';
+        const best = data.best?.rating || '-';
+        const w = data.record?.win || 0;
+        const l = data.record?.loss || 0;
+        const d = data.record?.draw || 0;
+        ratingsHTML += `<div class="rating-card">
+          <div class="label">${rt.icon} ${rt.label}</div>
+          <div class="value">${rating}</div>
+          <div class="record"><span class="w">${w}W</span> / <span class="l">${l}L</span> / <span class="d">${d}D</span></div>
+          <div class="best">Best: ${best}</div>
+        </div>`;
+      }
+    }
+
+    card.innerHTML = `
+      <div class="profile-header">
+        <img class="profile-avatar" src="${profile.avatar || ''}" alt="avatar" onerror="this.style.display='none'">
+        <div>
+          <div class="profile-name">
+            ${profile.name || profile.username}
+            ${profile.title ? `<span class="profile-title ${titleClass}">${profile.title}</span>` : ''}
+          </div>
+          <div class="profile-username">@${profile.username}
+            ${profile.country ? '' : ''}
+            ${profile.followers ? ` &bull; ${profile.followers.toLocaleString()} followers` : ''}
+          </div>
+          <div class="profile-meta">
+            ${joined ? `Joined ${joined}` : ''}
+            ${lastOnline ? ` &bull; Last online ${lastOnline}` : ''}
+            ${profile.status ? ` &bull; ${profile.status}` : ''}
+            ${profile.league ? ` &bull; ${profile.league} League` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="profile-ratings">${ratingsHTML}</div>`;
+    card.classList.add('visible');
+  }
+
+  loadPGNText(text) {
+    const pgnTexts = parsePGNGames(text);
+    if (pgnTexts.length === 0) {
+      document.getElementById('fetch-status').textContent = 'No valid PGN found';
+      return;
+    }
+
+    // Store the user's selected analysis side for pasted PGN
+    this.pgnPlayerColor = document.getElementById('pgn-player-color').value;
+
+    this.games = pgnTexts.map(pgn => ({
+      pgn,
+      white: extractHeader(pgn, 'White'),
+      black: extractHeader(pgn, 'Black'),
+      whiteRating: extractHeader(pgn, 'WhiteElo') || '?',
+      blackRating: extractHeader(pgn, 'BlackElo') || '?',
+      whiteResult: '',
+      blackResult: '',
+      timeControl: extractHeader(pgn, 'TimeControl') || '?',
+      url: ''
+    }));
+
+    document.getElementById('fetch-status').textContent = `Loaded ${this.games.length} game(s) from PGN`;
+    this._renderGamesList();
+  }
+
+  _renderGamesList() {
+    const list = document.getElementById('games-list');
+    list.innerHTML = '';
+    this.games.forEach((g, i) => {
+      const card = document.createElement('div');
+      card.className = 'game-card';
+
+      let resultText = '';
+      let resultClass = '';
+      const resultStr = extractHeader(g.pgn, 'Result');
+      if (this.username) {
+        const isWhite = g.white.toLowerCase() === this.username;
+        const playerResult = isWhite ? g.whiteResult : g.blackResult;
+        if (playerResult === 'win' || (resultStr === '1-0' && isWhite) || (resultStr === '0-1' && !isWhite)) {
+          resultText = 'Win'; resultClass = 'win';
+        } else if (playerResult === 'lose' || playerResult === 'checkmated' || playerResult === 'timeout' || playerResult === 'resigned' ||
+                   (resultStr === '0-1' && isWhite) || (resultStr === '1-0' && !isWhite)) {
+          resultText = 'Loss'; resultClass = 'loss';
+        } else {
+          resultText = 'Draw'; resultClass = 'draw';
+        }
+      } else {
+        resultText = resultStr || '?';
+        resultClass = resultStr === '1-0' ? 'win' : resultStr === '0-1' ? 'loss' : 'draw';
+      }
+
+      // Format time control: "1800" → "30 min", "180+2" → "3+2", "1/259200" → "Daily"
+      let tcDisplay = g.timeControl;
+      if (tcDisplay && tcDisplay !== '?') {
+        if (tcDisplay.includes('/')) {
+          tcDisplay = 'Daily';
+        } else {
+          const tcParts = tcDisplay.split('+');
+          const baseSec = parseInt(tcParts[0]) || 0;
+          const inc = tcParts[1] ? parseInt(tcParts[1]) : 0;
+          const baseMin = Math.floor(baseSec / 60);
+          tcDisplay = inc > 0 ? `${baseMin}+${inc}` : (baseMin >= 1 ? `${baseMin} min` : `${baseSec}s`);
+        }
+      }
+
+      card.innerHTML = `
+        <div class="players">${g.white} (${g.whiteRating}) vs ${g.black} (${g.blackRating})</div>
+        <div class="meta">
+          <span class="result ${resultClass}">${resultText}</span>
+          &bull; ${tcDisplay}
+        </div>`;
+      card.addEventListener('click', () => this.selectGame(i));
+      list.appendChild(card);
+    });
+  }
+
+  // Determine which color the user is playing for the current game
+  getPlayerColor(game) {
+    // If loaded from Chess.com with a username, use that
+    if (this.username) {
+      return (game.white || '').toLowerCase() === this.username.toLowerCase() ? 'w' : 'b';
+    }
+    // For pasted PGN, use the user's selection
+    if (this.pgnPlayerColor) return this.pgnPlayerColor;
+    return 'w'; // default fallback
+  }
+
+  selectGame(index) {
+    this.currentGameIndex = index;
+    const game = this.games[index];
+    this.analysis = null;
+
+    // Parse PGN
+    this.gameChess = new Chess();
+    this.gameChess.load_pgn(game.pgn);
+    this.gameMoves = this.gameChess.history({verbose: true});
+
+    // Build positions array
+    this.gamePositions = [];
+    const replay = new Chess();
+    this.gamePositions.push(replay.fen());
+    const moves = replay.history ? this.gameChess.history() : [];
+    const replayChess = new Chess();
+    for (const san of this.gameChess.history()) {
+      replayChess.move(san);
+      this.gamePositions.push(replayChess.fen());
+    }
+
+    // Set up board orientation based on player color
+    const myColor = this.getPlayerColor(game);
+    if (myColor === 'b' && !this.boards.analyze.flipped) this.boards.analyze.flip();
+    if (myColor === 'w' && this.boards.analyze.flipped) this.boards.analyze.flip();
+
+    // Player info
+    const isWhite = myColor === 'w';
+    document.getElementById('top-player').textContent = isWhite
+      ? `${game.black} (${game.blackRating})`
+      : `${game.white} (${game.whiteRating})`;
+    document.getElementById('bottom-player').textContent = isWhite
+      ? `${game.white} (${game.whiteRating})`
+      : `${game.black} (${game.blackRating})`;
+
+    // Build move list
+    this._renderMoveList();
+
+    // Go to start
+    this.goToMove(-1);
+    this.switchTab('analyze');
+
+    // Clear previous analysis display
+    document.getElementById('game-summary').style.display = 'none';
+    document.getElementById('analysis-eval').textContent = 'Click "Analyze Game" to start analysis';
+    document.getElementById('analysis-best').textContent = '';
+    document.getElementById('analysis-comment').textContent = '';
+    document.getElementById('btn-analyze').disabled = !this.engine.ready;
+  }
+
+  _renderMoveList() {
+    const container = document.getElementById('move-list');
+    container.innerHTML = '';
+    const sans = this.gameChess.history();
+    for (let i = 0; i < sans.length; i += 2) {
+      const row = document.createElement('div');
+      row.className = 'move-row';
+      const num = document.createElement('span');
+      num.className = 'move-num';
+      num.textContent = (Math.floor(i/2) + 1) + '.';
+      row.appendChild(num);
+
+      const wCell = document.createElement('span');
+      wCell.className = 'move-cell';
+      wCell.textContent = sans[i];
+      wCell.dataset.moveIndex = i;
+      wCell.addEventListener('click', () => this.goToMove(i));
+      row.appendChild(wCell);
+
+      if (i + 1 < sans.length) {
+        const bCell = document.createElement('span');
+        bCell.className = 'move-cell';
+        bCell.textContent = sans[i + 1];
+        bCell.dataset.moveIndex = i + 1;
+        bCell.addEventListener('click', () => this.goToMove(i + 1));
+        row.appendChild(bCell);
+      }
+      container.appendChild(row);
+    }
+  }
+
+  goToMove(index) {
+    if (!this.gamePositions || this.gamePositions.length === 0) return;
+    index = Math.max(-1, Math.min(index, this.gamePositions.length - 2));
+    this.currentMoveIndex = index;
+
+    const fen = this.gamePositions[index + 1];
+    this.boards.analyze.setPosition(fen);
+
+    // Last move highlight
+    if (index >= 0) {
+      const m = this.gameMoves[index];
+      this.boards.analyze.setLastMove(m.from, m.to);
+    } else {
+      this.boards.analyze.setLastMove(null, null);
+    }
+
+    // Clear and apply analysis highlights
+    this.boards.analyze.clearHighlightClasses();
+
+    // Active move in move list
+    document.querySelectorAll('#move-list .move-cell').forEach(c => {
+      c.classList.toggle('active', parseInt(c.dataset.moveIndex) === index);
+    });
+
+    // Scroll active move into view
+    const activeCell = document.querySelector('#move-list .move-cell.active');
+    if (activeCell) activeCell.scrollIntoView({block: 'nearest'});
+
+    // Update analysis panel
+    if (this.analysis && index >= 0 && this.analysis[index]) {
+      const a = this.analysis[index];
+      const playerSide = a.playerColor === 'w' ? 'White' : 'Black';
+
+      // Eval display
+      const evalWhite = evalToWhite(cappedScore(a.evalAfter.score, a.evalAfter.mate), a.evalAfter.sideToMove);
+      const evalSign = evalWhite >= 0 ? '+' : '';
+      const evalDisplay = a.evalAfter.mate !== null && a.evalAfter.mate !== undefined
+        ? (a.evalAfter.mate > 0 ? '+M' + a.evalAfter.mate : '-M' + Math.abs(a.evalAfter.mate))
+        : evalSign + (evalWhite / 100).toFixed(1);
+
+      // Eval before (for comparison)
+      const evalWhiteBefore = evalToWhite(cappedScore(a.evalBefore.score, a.evalBefore.mate), a.evalBefore.sideToMove);
+      const evalBeforeDisplay = a.evalBefore.mate !== null && a.evalBefore.mate !== undefined
+        ? (evalWhiteBefore > 0 ? '+M' + Math.abs(a.evalBefore.mate) : '-M' + Math.abs(a.evalBefore.mate))
+        : (evalWhiteBefore >= 0 ? '+' : '') + (evalWhiteBefore / 100).toFixed(1);
+
+      // Win chances
+      const wcBefore = winChance(evalWhiteBefore);
+      const wcAfter = winChance(evalWhite);
+      const wcPlayerBefore = a.playerColor === 'w' ? wcBefore : (100 - wcBefore);
+      const wcPlayerAfter = a.playerColor === 'w' ? wcAfter : (100 - wcAfter);
+      const wcDrop = wcPlayerBefore - wcPlayerAfter;
+
+      // Badge
+      const badgeMap = {
+        brilliant: '<span class="analysis-badge badge-brilliant">Brilliant</span>',
+        best: '<span class="analysis-badge badge-best">Best</span>',
+        excellent: '<span class="analysis-badge badge-excellent">Excellent</span>',
+        good: '<span class="analysis-badge badge-good">Good</span>',
+        book: '<span class="analysis-badge badge-book">Book</span>',
+        inaccuracy: '<span class="analysis-badge badge-inaccuracy">Inaccuracy</span>',
+        mistake: '<span class="analysis-badge badge-mistake">Mistake</span>',
+        blunder: '<span class="analysis-badge badge-blunder">Blunder</span>'
+      };
+
+      const evalEl = document.getElementById('analysis-eval');
+      if (a.classification === 'opponent') {
+        // Opponent move — just show eval, no classification
+        evalEl.innerHTML = `<span style="color:${evalWhite > 50 ? '#fff' : evalWhite < -50 ? '#999' : 'var(--text)'}">${evalDisplay}</span> <span style="font-size:0.65em;color:var(--text2);">(opponent's move)</span>`;
+        document.getElementById('analysis-winchance').innerHTML = '';
+        document.getElementById('analysis-best').textContent = '';
+        document.getElementById('analysis-comment').textContent = '';
+        this.boards.analyze.clearHighlightClasses();
+        this._updateEvalBar(evalWhite);
+        return;
+      }
+      evalEl.innerHTML = `<span style="color:${evalWhite > 50 ? '#fff' : evalWhite < -50 ? '#999' : 'var(--text)'}">${evalDisplay}</span> ${badgeMap[a.classification] || ''}`;
+
+      // Win chance bar
+      const wcEl = document.getElementById('analysis-winchance');
+      const wcColor = wcDrop > 20 ? 'var(--red)' : wcDrop > 10 ? 'var(--orange)' : wcDrop > 5 ? '#ffeb3b' : wcDrop < -5 ? '#2196f3' : 'var(--green)';
+      if (!['good','book','excellent'].includes(a.classification)) {
+        wcEl.innerHTML = `<span style="color:var(--text2)">${playerSide} win:</span>
+          <span style="font-weight:600">${wcPlayerBefore.toFixed(0)}%</span>
+          <span style="color:var(--text2)">&rarr;</span>
+          <span style="font-weight:600;color:${wcColor}">${wcPlayerAfter.toFixed(0)}%</span>
+          <span style="color:${wcColor};font-size:0.85em">(${wcDrop > 0 ? '-' : '+'}${Math.abs(wcDrop).toFixed(1)}%)</span>
+          <div class="wc-bar"><div class="wc-bar-fill" style="width:${wcPlayerAfter}%;background:${wcColor}"></div></div>`;
+      } else {
+        wcEl.innerHTML = `<span style="color:var(--text2)">${playerSide} win:</span>
+          <span style="font-weight:600">${wcPlayerAfter.toFixed(0)}%</span>
+          <div class="wc-bar"><div class="wc-bar-fill" style="width:${wcPlayerAfter}%;background:var(--green)"></div></div>`;
+      }
+
+      // Best move line
+      const bestEl = document.getElementById('analysis-best');
+      const isNeg = ['blunder','mistake','inaccuracy'].includes(a.classification);
+      const isPos = ['best','brilliant','excellent'].includes(a.classification);
+      if (a.bestMoveSAN && isNeg) {
+        bestEl.innerHTML = `<span style="color:var(--text2)">Best was</span> <strong style="color:#2196f3">${a.bestMoveSAN}</strong> <span style="color:var(--text2)">(eval: ${evalBeforeDisplay})</span>`;
+      } else if (a.classification === 'brilliant') {
+        bestEl.innerHTML = `<span style="color:#00e5ff">&#9733; ${a.san}</span> <span style="color:var(--text2)">is a brilliant sacrifice — the engine's top choice</span>`;
+      } else if (a.classification === 'best') {
+        bestEl.innerHTML = `<span style="color:#2196f3">${a.san}</span> <span style="color:var(--text2)">is the engine's top choice</span>`;
+      } else if (a.classification === 'excellent') {
+        bestEl.innerHTML = `<span style="color:var(--green)">${a.san}</span> <span style="color:var(--text2)">is an excellent move — very close to the best</span>`;
+      } else if (a.classification === 'book') {
+        bestEl.innerHTML = `<span style="color:#a0887a">${a.san}</span> <span style="color:var(--text2)">is a standard opening book move</span>`;
+      } else {
+        bestEl.textContent = '';
+      }
+
+      // Detailed comment
+      const commentEl = document.getElementById('analysis-comment');
+      let comment = '';
+      const cpDrop = Math.abs(a.evalDrop / 100).toFixed(1);
+
+      if (a.classification === 'blunder') {
+        comment = `${a.san} is a blunder, dropping ${cpDrop} pawns of evaluation. `;
+        if (wcDrop > 30) comment += `This swings the win chance by ${wcDrop.toFixed(0)}% \u2014 a game-changing error. `;
+        else comment += `${playerSide} lost ${wcDrop.toFixed(0)}% win probability. `;
+        if (a.bestMoveSAN) comment += `The best move was ${a.bestMoveSAN}, which maintained the advantage.`;
+        commentEl.style.color = 'var(--red)';
+      } else if (a.classification === 'mistake') {
+        comment = `${a.san} is a mistake, losing roughly ${cpDrop} pawns. `;
+        comment += `${playerSide}'s win chance dropped from ${wcPlayerBefore.toFixed(0)}% to ${wcPlayerAfter.toFixed(0)}%. `;
+        if (a.bestMoveSAN) comment += `${a.bestMoveSAN} was more accurate here.`;
+        commentEl.style.color = 'var(--orange)';
+      } else if (a.classification === 'inaccuracy') {
+        comment = `${a.san} is a slight inaccuracy (${cpDrop} pawn loss). `;
+        if (a.bestMoveSAN && a.bestMoveSAN !== a.san) comment += `${a.bestMoveSAN} was slightly better, keeping ${playerSide} at ${wcPlayerBefore.toFixed(0)}% win chance instead of ${wcPlayerAfter.toFixed(0)}%.`;
+        commentEl.style.color = '#ffeb3b';
+      } else if (a.classification === 'brilliant') {
+        comment = `Brilliant! ${a.san} is a sacrifice that the engine confirms as the best move. ${playerSide} maintains ${wcPlayerAfter.toFixed(0)}% win probability.`;
+        commentEl.style.color = '#00e5ff';
+      } else if (a.classification === 'best') {
+        comment = `${a.san} is the engine's top choice. ${playerSide} maintains ${wcPlayerAfter.toFixed(0)}% win probability.`;
+        commentEl.style.color = '#2196f3';
+      } else if (a.classification === 'excellent') {
+        comment = `${a.san} is an excellent move, very close to the engine's best. ${playerSide} keeps ${wcPlayerAfter.toFixed(0)}% win chance.`;
+        commentEl.style.color = 'var(--green)';
+      } else if (a.classification === 'book') {
+        comment = `${a.san} is a standard opening book move. No analysis needed for theory.`;
+        commentEl.style.color = '#a0887a';
+      } else {
+        comment = `${a.san} is a solid move. ${playerSide} keeps ${wcPlayerAfter.toFixed(0)}% win probability.`;
+        commentEl.style.color = 'var(--text2)';
+      }
+      commentEl.textContent = comment;
+
+      // Highlight the move destination
+      this.boards.analyze.clearHighlightClasses();
+      if (!['good','book'].includes(a.classification)) {
+        const m = this.gameMoves[index];
+        this.boards.analyze.highlightSquare(m.to, 'highlight-' + a.classification);
+      }
+
+      // Update eval bar
+      this._updateEvalBar(evalWhite);
+    } else if (index === -1) {
+      document.getElementById('analysis-eval').innerHTML = this.analysis ? '<span>0.0</span>' : '<span>Click "Analyze Game"</span>';
+      document.getElementById('analysis-winchance').innerHTML = '';
+      document.getElementById('analysis-best').textContent = '';
+      document.getElementById('analysis-comment').textContent = '';
+      this._updateEvalBar(0);
+    }
+  }
+
+  _updateEvalBar(evalWhiteCp) {
+    const pct = evalToPercent(evalWhiteCp);
+    const fillEl = document.getElementById('eval-fill');
+    const textEl = document.getElementById('eval-text');
+    // If board is flipped, invert the bar
+    const displayPct = this.boards.analyze.flipped ? (100 - pct) : pct;
+    fillEl.style.height = displayPct + '%';
+
+    const sign = evalWhiteCp >= 0 ? '+' : '';
+    textEl.textContent = sign + (evalWhiteCp / 100).toFixed(1);
+    textEl.style.color = displayPct > 50 ? '#333' : '#eee';
+  }
+
+  // =================== ANALYSIS ===================
+
+  async analyzeCurrentGame() {
+    if (!this.engine.ready || this.gamePositions.length < 2) return;
+
+    const btn = document.getElementById('btn-analyze');
+    const progressBar = document.getElementById('analysis-progress-bar');
+    const progressFill = document.getElementById('analysis-progress-fill');
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+    progressBar.style.display = 'block';
+
+    // Determine analysis depth/speed from selector
+    const speedSel = document.getElementById('analysis-speed').value;
+    let evalOpts;
+    if (speedSel === 'fast') evalOpts = {movetime: 500};
+    else if (speedSel === 'normal') evalOpts = {movetime: 1500};
+    else evalOpts = 18; // deep: fixed depth 18
+
+    const BOOK_MOVES = 10; // quick eval for first 10 half-moves (opening book)
+
+    const totalMoves = this.gamePositions.length - 1;
+    this.analysis = [];
+
+    // Determine which side we're analyzing
+    const game = this.games[this.currentGameIndex];
+    const analyzeColor = this.getPlayerColor(game);
+
+    // Evaluate starting position (quick — it's always the start)
+    let prevResult = await this.engine.evaluate(this.gamePositions[0], {movetime: 100});
+    let prevSideToMove = 'w'; // White to move at start
+
+    for (let i = 0; i < totalMoves; i++) {
+      const fen = this.gamePositions[i + 1];
+      const parts = fen.split(' ');
+      const currentSideToMove = parts[1]; // side to move AFTER this move
+      const playerColor = prevSideToMove; // who made this move
+      const isUserMove = playerColor === analyzeColor;
+
+      // Check if position is terminal (checkmate/stalemate) — skip engine eval
+      const posCheck = new Chess(fen);
+      let result;
+      if (posCheck.game_over()) {
+        // For terminal positions, synthesize a result
+        if (posCheck.in_checkmate()) {
+          // The side to move is checkmated
+          const matedIsWhite = currentSideToMove === 'w';
+          result = {score: matedIsWhite ? -30000 : 30000, mate: matedIsWhite ? -0 : 0, pv: '', bestMoveUCI: '', depth: 0};
+        } else {
+          result = {score: 0, mate: null, pv: '', bestMoveUCI: '', depth: 0};
+        }
+      } else {
+        // Use quick eval for opening book moves and opponent moves, full eval for user moves
+        const moveEvalOpts = !isUserMove ? {movetime: 100} : (i < BOOK_MOVES ? {movetime: 100} : evalOpts);
+        result = await this.engine.evaluate(fen, moveEvalOpts);
+      }
+
+      // Normalize to white's perspective using capped scores (avoids mate-score explosions)
+      const cappedBefore = cappedScore(prevResult.score, prevResult.mate);
+      const cappedAfter = cappedScore(result.score, result.mate);
+      const evalWhiteBefore = evalToWhite(cappedBefore, prevSideToMove);
+      const evalWhiteAfter = evalToWhite(cappedAfter, currentSideToMove);
+
+      // Centipawn drop (capped, for display)
+      const evalDrop = playerColor === 'w'
+        ? (evalWhiteBefore - evalWhiteAfter)
+        : (evalWhiteAfter - evalWhiteBefore);
+
+      // Win-chance drop (for accurate classification)
+      const wcBefore = winChance(evalWhiteBefore);
+      const wcAfter = winChance(evalWhiteAfter);
+      const wcDrop = playerColor === 'w'
+        ? (wcBefore - wcAfter)
+        : (wcAfter - wcBefore);
+
+      // Get best move info for the position BEFORE this move
+      const bestMoveUCI = prevResult.bestMoveUCI || (prevResult.pv ? prevResult.pv.split(' ')[0] : '');
+      let bestMoveSAN = '';
+      if (prevResult.pv) {
+        const prevFen = this.gamePositions[i];
+        const tempChess = new Chess(prevFen);
+        bestMoveSAN = uciToSan(tempChess, bestMoveUCI);
+      }
+
+      // Player's win chance (from their perspective, not white's)
+      const playerWcBefore = playerColor === 'w' ? wcBefore : (100 - wcBefore);
+      const playerWcAfter = playerColor === 'w' ? wcAfter : (100 - wcAfter);
+
+      // Only classify the user's moves; opponent moves get 'opponent' tag
+      const move = this.gameMoves[i];
+      let classification = 'opponent';
+      if (isUserMove) {
+        const playedMoveUCI = move.from + move.to + (move.promotion || '');
+        const prevChess = new Chess(this.gamePositions[i]);
+        const isSac = isSacrificialMove(prevChess, move.san);
+        classification = classifyMove(wcDrop, {
+          moveIndex: i, san: move.san,
+          isCapture: !!move.captured, isSacrifice: isSac,
+          bestMoveUCI, playedMoveUCI,
+          wcBefore: playerWcBefore, wcAfter: playerWcAfter
+        });
+      }
+
+      this.analysis.push({
+        moveIndex: i,
+        san: move.san,
+        playerColor,
+        evalBefore: {score: prevResult.score, mate: prevResult.mate, sideToMove: prevSideToMove},
+        evalAfter: {score: result.score, mate: result.mate, sideToMove: currentSideToMove},
+        evalDrop,
+        classification,
+        bestMoveSAN,
+        bestMoveUCI,
+        fenBefore: this.gamePositions[i]
+      });
+
+      prevResult = result;
+      prevSideToMove = currentSideToMove;
+
+      // Update progress
+      progressFill.style.width = ((i + 1) / totalMoves * 100) + '%';
+      btn.textContent = `Analyzing... (${i + 1}/${totalMoves})`;
+
+      // Color-code moves in move list (only user's moves)
+      const cell = document.querySelector(`#move-list .move-cell[data-move-index="${i}"]`);
+      if (cell) {
+        cell.classList.remove('blunder','mistake','inaccuracy','good','best','excellent','brilliant','book','opponent');
+        if (isUserMove) {
+          cell.classList.add(classification);
+        } else {
+          cell.classList.add('opponent');
+        }
+      }
+
+      // Yield to UI
+      await new Promise(r => setTimeout(r, 5));
+    }
+
+    btn.textContent = 'Analysis Complete';
+    progressBar.style.display = 'none';
+
+    // Generate summary
+    this._showGameSummary();
+
+    // Generate puzzles
+    this._generatePuzzles();
+
+    // Refresh current position display
+    this.goToMove(this.currentMoveIndex);
+  }
+
+  _showGameSummary() {
+    if (!this.analysis) return;
+    const summary = document.getElementById('game-summary');
+    const game = this.games[this.currentGameIndex];
+    const playerColor = this.getPlayerColor(game);
+    const isWhite = playerColor === 'w';
+
+    const playerMoves = this.analysis.filter(a => a.playerColor === playerColor);
+    const totalMoves = playerMoves.length;
+    if (totalMoves === 0) return;
+
+    const avgCPL = playerMoves.reduce((s, a) => s + Math.max(0, a.evalDrop), 0) / totalMoves;
+    const blunders = playerMoves.filter(a => a.classification === 'blunder').length;
+    const mistakes = playerMoves.filter(a => a.classification === 'mistake').length;
+    const inaccuracies = playerMoves.filter(a => a.classification === 'inaccuracy').length;
+    const brilliantMoves = playerMoves.filter(a => a.classification === 'brilliant').length;
+    const bestMoves = playerMoves.filter(a => a.classification === 'best').length;
+    const excellentMoves = playerMoves.filter(a => a.classification === 'excellent').length;
+    const bookMoves = playerMoves.filter(a => a.classification === 'book').length;
+
+    // Phase analysis
+    const opening = playerMoves.filter(a => a.moveIndex < 20);
+    const middle = playerMoves.filter(a => a.moveIndex >= 20 && a.moveIndex < 50);
+    const endgame = playerMoves.filter(a => a.moveIndex >= 50);
+
+    const phaseACPL = (moves) => moves.length > 0
+      ? (moves.reduce((s, a) => s + Math.max(0, a.evalDrop), 0) / moves.length).toFixed(0)
+      : '-';
+
+    // Estimate rating
+    const estimatedRating = Math.round(Math.max(400, Math.min(2800, 1800 - avgCPL * 6)));
+
+    // Identify weakest phase
+    const phases = [
+      {name: 'Opening', acpl: opening.length > 0 ? opening.reduce((s,a) => s + Math.max(0,a.evalDrop), 0) / opening.length : 0, count: opening.length},
+      {name: 'Middlegame', acpl: middle.length > 0 ? middle.reduce((s,a) => s + Math.max(0,a.evalDrop), 0) / middle.length : 0, count: middle.length},
+      {name: 'Endgame', acpl: endgame.length > 0 ? endgame.reduce((s,a) => s + Math.max(0,a.evalDrop), 0) / endgame.length : 0, count: endgame.length}
+    ].filter(p => p.count > 0);
+    const weakest = phases.sort((a, b) => b.acpl - a.acpl)[0];
+
+    summary.style.display = 'block';
+    summary.innerHTML = `
+      <h3>Game Summary (${isWhite ? 'White' : 'Black'})</h3>
+      <div class="summary-grid">
+        <div class="summary-item"><span class="summary-label">Avg CP Loss:</span> <span>${avgCPL.toFixed(1)}</span></div>
+        <div class="summary-item"><span class="summary-label">Est. Rating:</span> <span>~${estimatedRating}</span></div>
+        ${brilliantMoves ? `<div class="summary-item"><span class="summary-label" style="color:#00e5ff">Brilliant:</span> <span>${brilliantMoves}</span></div>` : ''}
+        <div class="summary-item"><span class="summary-label" style="color:#2196f3">Best Moves:</span> <span>${bestMoves}</span></div>
+        <div class="summary-item"><span class="summary-label" style="color:var(--green)">Excellent:</span> <span>${excellentMoves}</span></div>
+        <div class="summary-item"><span class="summary-label" style="color:var(--red)">Blunders:</span> <span>${blunders}</span></div>
+        <div class="summary-item"><span class="summary-label" style="color:var(--orange)">Mistakes:</span> <span>${mistakes}</span></div>
+        <div class="summary-item"><span class="summary-label" style="color:#ffeb3b">Inaccuracies:</span> <span>${inaccuracies}</span></div>
+        <div class="summary-item"><span class="summary-label">Opening ACPL:</span> <span>${phaseACPL(opening)}</span></div>
+        <div class="summary-item"><span class="summary-label">Middlegame ACPL:</span> <span>${phaseACPL(middle)}</span></div>
+        <div class="summary-item"><span class="summary-label">Endgame ACPL:</span> <span>${phaseACPL(endgame)}</span></div>
+        ${weakest ? `<div class="summary-item"><span class="summary-label">Weakest Phase:</span> <span style="color:var(--orange)">${weakest.name}</span></div>` : ''}
+      </div>`;
+  }
+
+  // =================== PUZZLES ===================
+
+  _generatePuzzles() {
+    if (!this.analysis) return;
+    const game = this.games[this.currentGameIndex];
+    const playerColor = this.getPlayerColor(game);
+
+    this.puzzles = this.analysis
+      .filter(a => a.playerColor === playerColor && (a.classification === 'blunder' || a.classification === 'mistake'))
+      .map(a => ({
+        fen: a.fenBefore,
+        playerColor: a.playerColor,
+        bestMoveUCI: a.bestMoveUCI,
+        bestMoveSAN: a.bestMoveSAN,
+        playedMove: a.san,
+        evalDrop: a.evalDrop,
+        classification: a.classification
+      }));
+
+    if (this.puzzles.length > 0) {
+      document.getElementById('btn-next-puzzle').disabled = false;
+      document.getElementById('puzzle-feedback').textContent =
+        `${this.puzzles.length} puzzle(s) generated from your mistakes. Click "Next Puzzle" to start!`;
+    } else {
+      document.getElementById('puzzle-feedback').textContent = 'No significant mistakes found - great play!';
+    }
+  }
+
+  nextPuzzle() {
+    if (this.puzzles.length === 0) return;
+    this.currentPuzzleIndex = (this.currentPuzzleIndex + 1) % this.puzzles.length;
+    this._loadPuzzle(this.currentPuzzleIndex);
+  }
+
+  _loadPuzzle(index) {
+    const puzzle = this.puzzles[index];
+    this.puzzleChess = new Chess(puzzle.fen);
+
+    // Orient board
+    if (puzzle.playerColor === 'b' && !this.boards.puzzles.flipped) this.boards.puzzles.flip();
+    if (puzzle.playerColor === 'w' && this.boards.puzzles.flipped) this.boards.puzzles.flip();
+
+    this.boards.puzzles.setPosition(puzzle.fen);
+    this.boards.puzzles.setLastMove(null, null);
+    this.boards.puzzles.enableInteraction(this.puzzleChess, (move) => this._onPuzzleMove(move), puzzle.playerColor);
+
+    document.getElementById('puzzle-prompt').textContent =
+      `Puzzle ${index + 1}/${this.puzzles.length}: Find the best move for ${puzzle.playerColor === 'w' ? 'White' : 'Black'}`;
+    document.getElementById('puzzle-prompt').style.color = 'var(--text)';
+    document.getElementById('puzzle-feedback').textContent =
+      `You played ${puzzle.playedMove} (${puzzle.classification}). Can you find the better move?`;
+    document.getElementById('btn-hint').disabled = false;
+    document.getElementById('btn-solution').disabled = false;
+  }
+
+  _onPuzzleMove(move) {
+    const puzzle = this.puzzles[this.currentPuzzleIndex];
+    const moveUCI = move.from + move.to + (move.promotion || '');
+
+    if (moveUCI === puzzle.bestMoveUCI || move.san === puzzle.bestMoveSAN) {
+      // Correct!
+      this.puzzlesSolved++;
+      document.getElementById('puzzle-prompt').textContent = 'Correct!';
+      document.getElementById('puzzle-prompt').style.color = 'var(--green)';
+      document.getElementById('puzzle-feedback').textContent =
+        `${puzzle.bestMoveSAN} is the best move. You originally played ${puzzle.playedMove}.`;
+      this.boards.puzzles.disableInteraction();
+    } else {
+      // Wrong
+      this.puzzlesFailed++;
+      this.puzzleChess.undo();
+      this.boards.puzzles.setPosition(this.puzzleChess.fen());
+      document.getElementById('puzzle-prompt').textContent = 'Not quite - try again!';
+      document.getElementById('puzzle-prompt').style.color = 'var(--red)';
+    }
+    this._updatePuzzleStats();
+  }
+
+  showPuzzleHint() {
+    if (this.currentPuzzleIndex < 0) return;
+    const puzzle = this.puzzles[this.currentPuzzleIndex];
+    const bestUCI = puzzle.bestMoveUCI;
+    if (bestUCI && bestUCI.length >= 2) {
+      const fromSq = bestUCI.substring(0, 2);
+      this.boards.puzzles.clearHighlightClasses();
+      this.boards.puzzles.highlightSquare(fromSq, 'highlight-best');
+      document.getElementById('puzzle-feedback').textContent = 'Hint: Look at the highlighted piece.';
+    }
+  }
+
+  showPuzzleSolution() {
+    if (this.currentPuzzleIndex < 0) return;
+    const puzzle = this.puzzles[this.currentPuzzleIndex];
+    this.puzzlesFailed++;
+    this._updatePuzzleStats();
+
+    // Make the best move
+    const bestUCI = puzzle.bestMoveUCI;
+    if (bestUCI) {
+      const from = bestUCI.substring(0, 2);
+      const to = bestUCI.substring(2, 4);
+      const promo = bestUCI.length > 4 ? bestUCI[4] : undefined;
+      this.puzzleChess.move({from, to, promotion: promo});
+      this.boards.puzzles.setPosition(this.puzzleChess.fen());
+      this.boards.puzzles.setLastMove(from, to);
+    }
+    this.boards.puzzles.disableInteraction();
+    document.getElementById('puzzle-prompt').textContent = 'Solution: ' + puzzle.bestMoveSAN;
+    document.getElementById('puzzle-prompt').style.color = 'var(--orange)';
+    document.getElementById('puzzle-feedback').textContent =
+      `The best move was ${puzzle.bestMoveSAN}. You played ${puzzle.playedMove} in the game.`;
+  }
+
+  _updatePuzzleStats() {
+    document.getElementById('puzzles-solved').textContent = this.puzzlesSolved;
+    document.getElementById('puzzles-failed').textContent = this.puzzlesFailed;
+    const total = this.puzzlesSolved + this.puzzlesFailed;
+    document.getElementById('puzzle-accuracy').textContent =
+      total > 0 ? Math.round(this.puzzlesSolved / total * 100) + '%' : '-';
+  }
+
+  // =================== REPORT (BULK ANALYSIS) ===================
+
+  async generateReport() {
+    if (!this.engine.ready) { alert('Engine not ready yet'); return; }
+    const username = document.getElementById('report-username').value.trim().toLowerCase();
+    if (!username) { alert('Enter a Chess.com username'); return; }
+
+    const period = parseInt(document.getElementById('report-period').value);
+    const timeControl = document.getElementById('report-timecontrol').value;
+    const maxGames = parseInt(document.getElementById('report-maxgames').value);
+    const statusEl = document.getElementById('report-status');
+    const progressBar = document.getElementById('report-progress-bar');
+    const progressFill = document.getElementById('report-progress-fill');
+    const btn = document.getElementById('btn-generate-report');
+    btn.disabled = true;
+    progressBar.style.display = 'block';
+    progressFill.style.width = '0%';
+    document.getElementById('report-content').classList.remove('visible');
+
+    try {
+      // 1. Fetch archives
+      statusEl.innerHTML = 'Fetching game archives...<span class="spinner"></span>';
+      const archResp = await fetch(`https://api.chess.com/pub/player/${username}/games/archives`);
+      if (!archResp.ok) throw new Error('Player not found');
+      const archData = await archResp.json();
+      const archives = archData.archives || [];
+
+      // Filter archives by period
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - period);
+      const cutoffStr = `${cutoff.getFullYear()}/${String(cutoff.getMonth()+1).padStart(2,'0')}`;
+      const relevantArchives = archives.filter(url => {
+        const match = url.match(/(\d{4})\/(\d{2})$/);
+        if (!match) return false;
+        return `${match[1]}/${match[2]}` >= cutoffStr;
+      });
+
+      if (relevantArchives.length === 0) throw new Error('No archives found for this period');
+
+      // 2. Fetch all games from relevant archives
+      statusEl.innerHTML = `Fetching games from ${relevantArchives.length} month(s)...<span class="spinner"></span>`;
+      let allGames = [];
+      for (const url of relevantArchives) {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const data = await resp.json();
+          allGames = allGames.concat(data.games || []);
+        }
+      }
+
+      // 3. Filter by time control
+      if (timeControl !== 'all') {
+        allGames = allGames.filter(g => {
+          const tc = g.time_control || '';
+          const seconds = parseInt(tc.split('+')[0]) || 0;
+          if (timeControl === 'bullet') return seconds > 0 && seconds < 180;
+          if (timeControl === 'blitz') return seconds >= 180 && seconds < 600;
+          if (timeControl === 'rapid') return seconds >= 600 && seconds <= 1800;
+          if (timeControl === 'daily') return seconds > 1800 || tc.includes('/');
+          return true;
+        });
+      }
+
+      // Filter to only games with PGN that have actual moves
+      allGames = allGames.filter(g => g.pgn && g.pgn.includes('1.'));
+
+      if (allGames.length === 0) throw new Error('No games found matching filters');
+
+      // Take most recent N games
+      const gamesToAnalyze = allGames.slice(-maxGames);
+      statusEl.innerHTML = `Analyzing ${gamesToAnalyze.length} games (of ${allGames.length} total)...<span class="spinner"></span>`;
+
+      // 4. Analyze each game
+      const allAnalyses = [];
+      const gameInfos = [];
+      let totalMoves = 0;
+      let analyzedMoves = 0;
+
+      // Estimate total moves
+      for (const g of gamesToAnalyze) {
+        const tempChess = new Chess();
+        try { tempChess.load_pgn(g.pgn); } catch(e) { continue; }
+        totalMoves += tempChess.history().length;
+      }
+
+      for (let gi = 0; gi < gamesToAnalyze.length; gi++) {
+        const g = gamesToAnalyze[gi];
+        const chess = new Chess();
+        try { chess.load_pgn(g.pgn); } catch(e) { continue; }
+        const moves = chess.history({verbose: true});
+        const sans = chess.history();
+        if (sans.length < 6) continue; // skip very short games
+
+        const isWhite = (g.white?.username || '').toLowerCase() === username;
+        const playerColor = isWhite ? 'w' : 'b';
+        const resultStr = isWhite ? g.white?.result : g.black?.result;
+
+        // Build positions
+        const positions = [];
+        const replay = new Chess();
+        positions.push(replay.fen());
+        for (const s of sans) { replay.move(s); positions.push(replay.fen()); }
+
+        // Determine analysis speed from selector
+        const reportSpeedSel = document.getElementById('report-speed').value;
+        let reportEvalOpts;
+        if (reportSpeedSel === 'fast') reportEvalOpts = {movetime: 500};
+        else if (reportSpeedSel === 'normal') reportEvalOpts = {movetime: 1200};
+        else reportEvalOpts = 16; // deep: fixed depth 16
+
+        const REPORT_BOOK_MOVES = 10; // quick eval for first 10 half-moves (opening book)
+
+        // Analyze moves
+        let prevResult = await this.engine.evaluate(positions[0], {movetime: 100});
+        let prevSideToMove = 'w';
+        const gameAnalysis = [];
+
+        for (let i = 0; i < sans.length; i++) {
+          const fen = positions[i + 1];
+          const parts = fen.split(' ');
+          const currentSideToMove = parts[1];
+          const whoMoved = prevSideToMove;
+          const isUserMove = whoMoved === playerColor;
+
+          // Check if position is terminal (checkmate/stalemate) — skip engine eval
+          const posCheck2 = new Chess(fen);
+          let result;
+          if (posCheck2.game_over()) {
+            if (posCheck2.in_checkmate()) {
+              const matedIsWhite = currentSideToMove === 'w';
+              result = {score: matedIsWhite ? -30000 : 30000, mate: 0, pv: '', bestMoveUCI: '', depth: 0};
+            } else {
+              result = {score: 0, mate: null, pv: '', bestMoveUCI: '', depth: 0};
+            }
+          } else {
+            // Quick eval for opponent moves, full eval for user moves
+            const moveEval = !isUserMove ? {movetime: 80} : (i < REPORT_BOOK_MOVES ? {movetime: 100} : reportEvalOpts);
+            result = await this.engine.evaluate(fen, moveEval);
+          }
+          const cBefore = cappedScore(prevResult.score, prevResult.mate);
+          const cAfter = cappedScore(result.score, result.mate);
+          const evalWhiteBefore = evalToWhite(cBefore, prevSideToMove);
+          const evalWhiteAfter = evalToWhite(cAfter, currentSideToMove);
+          const evalDrop = whoMoved === 'w'
+            ? (evalWhiteBefore - evalWhiteAfter)
+            : (evalWhiteAfter - evalWhiteBefore);
+
+          let classification = 'opponent';
+          let bestMoveSAN = '';
+          if (isUserMove) {
+            const wcBefore = winChance(evalWhiteBefore);
+            const wcAfter = winChance(evalWhiteAfter);
+            const wcDrop = whoMoved === 'w' ? (wcBefore - wcAfter) : (wcAfter - wcBefore);
+            const pWcBefore = whoMoved === 'w' ? wcBefore : (100 - wcBefore);
+            const pWcAfter = whoMoved === 'w' ? wcAfter : (100 - wcAfter);
+
+            const bestMoveUCI2 = prevResult.bestMoveUCI || (prevResult.pv ? prevResult.pv.split(' ')[0] : '');
+            if (prevResult.pv) {
+              const tempC = new Chess(positions[i]);
+              bestMoveSAN = uciToSan(tempC, bestMoveUCI2);
+            }
+
+            const tempC2 = new Chess(positions[i]);
+            const verboseMove = tempC2.move(sans[i]);
+            const playedUCI2 = verboseMove ? (verboseMove.from + verboseMove.to + (verboseMove.promotion || '')) : '';
+
+            classification = classifyMove(wcDrop, {
+              moveIndex: i, san: sans[i],
+              isCapture: verboseMove ? !!verboseMove.captured : false,
+              isSacrifice: false,
+              bestMoveUCI: bestMoveUCI2, playedMoveUCI: playedUCI2,
+              wcBefore: pWcBefore, wcAfter: pWcAfter
+            });
+          }
+
+          gameAnalysis.push({
+            moveIndex: i, san: sans[i], playerColor: whoMoved,
+            evalDrop, classification, bestMoveSAN,
+            fenBefore: positions[i]
+          });
+
+          prevResult = result;
+          prevSideToMove = currentSideToMove;
+          analyzedMoves++;
+          progressFill.style.width = (analyzedMoves / totalMoves * 100) + '%';
+          statusEl.innerHTML = `Analyzing game ${gi+1}/${gamesToAnalyze.length}, move ${i+1}/${sans.length}...<span class="spinner"></span>`;
+          await new Promise(r => setTimeout(r, 2));
+        }
+
+        // Extract opening (first 6 moves)
+        const openingMoves = sans.slice(0, Math.min(12, sans.length)).join(' ');
+
+        allAnalyses.push(gameAnalysis);
+        gameInfos.push({ playerColor, result: resultStr, openingMoves, totalMoves: sans.length,
+          white: g.white?.username, black: g.black?.username,
+          whiteRating: g.white?.rating, blackRating: g.black?.rating });
+      }
+
+      // 5. Build report
+      statusEl.textContent = 'Report complete!';
+      statusEl.style.color = 'var(--green)';
+      progressBar.style.display = 'none';
+      this._buildReport(username, allAnalyses, gameInfos, allGames.length, timeControl, period);
+
+    } catch (e) {
+      statusEl.textContent = 'Error: ' + e.message;
+      statusEl.style.color = 'var(--red)';
+      progressBar.style.display = 'none';
+    }
+    btn.disabled = false;
+  }
+
+  _buildReport(username, allAnalyses, gameInfos, totalGamesInPeriod, timeControl, period) {
+    const container = document.getElementById('report-content');
+    const gamesAnalyzed = allAnalyses.length;
+    if (gamesAnalyzed === 0) { container.innerHTML = '<p>No games analyzed.</p>'; container.classList.add('visible'); return; }
+
+    // Aggregate player moves across all games
+    let allPlayerMoves = [];
+    let wins = 0, losses = 0, draws = 0;
+    for (let gi = 0; gi < gamesAnalyzed; gi++) {
+      const info = gameInfos[gi];
+      const analysis = allAnalyses[gi];
+      const playerMoves = analysis.filter(a => a.playerColor === info.playerColor && a.classification !== 'opponent');
+      allPlayerMoves = allPlayerMoves.concat(playerMoves.map(m => ({...m, gameIndex: gi})));
+      if (info.result === 'win') wins++;
+      else if (info.result === 'lose' || info.result === 'checkmated' || info.result === 'timeout' || info.result === 'resigned') losses++;
+      else draws++;
+    }
+
+    const totalPlayerMoves = allPlayerMoves.length;
+    const avgCPL = totalPlayerMoves > 0 ? allPlayerMoves.reduce((s,m) => s + Math.max(0, m.evalDrop), 0) / totalPlayerMoves : 0;
+    const blunders = allPlayerMoves.filter(m => m.classification === 'blunder').length;
+    const mistakes = allPlayerMoves.filter(m => m.classification === 'mistake').length;
+    const inaccuracies = allPlayerMoves.filter(m => m.classification === 'inaccuracy').length;
+    const brilliantMoves = allPlayerMoves.filter(m => m.classification === 'brilliant').length;
+    const bestMoves = allPlayerMoves.filter(m => m.classification === 'best').length;
+    const excellentMoves = allPlayerMoves.filter(m => m.classification === 'excellent').length;
+    const goodMoves = allPlayerMoves.filter(m => m.classification === 'good').length;
+    const bookMoves = allPlayerMoves.filter(m => m.classification === 'book').length;
+    const accuracy = totalPlayerMoves > 0 ? ((goodMoves + bestMoves + excellentMoves + brilliantMoves + bookMoves) / totalPlayerMoves * 100) : 0;
+    const estimatedRating = Math.round(Math.max(400, Math.min(2800, 1800 - avgCPL * 6)));
+
+    // Phase breakdown
+    const opening = allPlayerMoves.filter(m => m.moveIndex < 20);
+    const middle = allPlayerMoves.filter(m => m.moveIndex >= 20 && m.moveIndex < 50);
+    const endgame = allPlayerMoves.filter(m => m.moveIndex >= 50);
+    const phaseACPL = (moves) => moves.length > 0 ? moves.reduce((s,m) => s + Math.max(0, m.evalDrop), 0) / moves.length : 0;
+    const openingACPL = phaseACPL(opening);
+    const middleACPL = phaseACPL(middle);
+    const endgameACPL = phaseACPL(endgame);
+
+    // Blunders per game
+    const blundersPerGame = (blunders / gamesAnalyzed).toFixed(1);
+    const mistakesPerGame = (mistakes / gamesAnalyzed).toFixed(1);
+
+    // Opening patterns (group by first 3 moves as white/black)
+    const openingStats = {};
+    for (let gi = 0; gi < gamesAnalyzed; gi++) {
+      const info = gameInfos[gi];
+      const key = info.openingMoves.split(' ').slice(0, 6).join(' ');
+      if (!openingStats[key]) openingStats[key] = {count: 0, wins: 0, losses: 0, draws: 0, acpl: []};
+      openingStats[key].count++;
+      if (info.result === 'win') openingStats[key].wins++;
+      else if (info.result === 'lose' || info.result === 'checkmated' || info.result === 'timeout' || info.result === 'resigned') openingStats[key].losses++;
+      else openingStats[key].draws++;
+      const gameMoves = allAnalyses[gi].filter(a => a.playerColor === info.playerColor && a.moveIndex < 20);
+      const acpl = gameMoves.length > 0 ? gameMoves.reduce((s,m) => s + Math.max(0,m.evalDrop),0) / gameMoves.length : 0;
+      openingStats[key].acpl.push(acpl);
+    }
+    const topOpenings = Object.entries(openingStats)
+      .sort((a,b) => b[1].count - a[1].count)
+      .slice(0, 5)
+      .map(([moves, s]) => ({moves, ...s, avgACPL: s.acpl.reduce((a,b)=>a+b,0)/s.acpl.length}));
+
+    // Identify strengths and weaknesses
+    const strengths = [];
+    const weaknesses = [];
+    const tips = [];
+
+    // Win rate
+    const winRate = wins / gamesAnalyzed * 100;
+    if (winRate >= 60) strengths.push(`Strong win rate: ${winRate.toFixed(0)}% across ${gamesAnalyzed} games`);
+    else if (winRate < 40) weaknesses.push(`Low win rate: ${winRate.toFixed(0)}%. Focus on reducing blunders to convert more games.`);
+
+    // Accuracy
+    if (accuracy >= 70) strengths.push(`High move accuracy: ${accuracy.toFixed(0)}% of moves are good or best`);
+    else if (accuracy < 50) weaknesses.push(`Move accuracy is ${accuracy.toFixed(0)}%. Many moves are inaccurate or worse.`);
+
+    // Phase analysis
+    const phases = [{name:'Opening', acpl: openingACPL}, {name:'Middlegame', acpl: middleACPL}, {name:'Endgame', acpl: endgameACPL}].filter(p => p.acpl > 0);
+    if (phases.length > 0) {
+      const best = phases.reduce((a,b) => a.acpl < b.acpl ? a : b);
+      const worst = phases.reduce((a,b) => a.acpl > b.acpl ? a : b);
+      if (best.acpl < 50) strengths.push(`Strong ${best.name.toLowerCase()} play (ACPL: ${best.acpl.toFixed(0)})`);
+      if (worst.acpl > 100) weaknesses.push(`Weak ${worst.name.toLowerCase()} play (ACPL: ${worst.acpl.toFixed(0)}). This is your biggest area for improvement.`);
+    }
+
+    // Blunder rate
+    if (blundersPerGame < 0.5) strengths.push(`Low blunder rate: only ${blundersPerGame} per game`);
+    else if (blundersPerGame >= 2) weaknesses.push(`High blunder rate: ${blundersPerGame} per game. Slow down and double-check for hanging pieces.`);
+    else if (blundersPerGame >= 1) weaknesses.push(`Averaging ${blundersPerGame} blunders per game. Try to identify critical moments before moving.`);
+
+    // Best move rate
+    const bestRate = totalPlayerMoves > 0 ? bestMoves / totalPlayerMoves * 100 : 0;
+    if (bestRate >= 30) strengths.push(`Finding the best move ${bestRate.toFixed(0)}% of the time — excellent tactical awareness`);
+
+    // Tips based on weaknesses
+    if (openingACPL > middleACPL && openingACPL > 80) tips.push('Study your main openings. Learn the key ideas and typical plans for the first 10-15 moves.');
+    if (middleACPL > 100) tips.push('Practice tactics puzzles daily. Most middlegame errors come from missing tactics.');
+    if (endgameACPL > 80 && endgame.length > 0) tips.push('Study basic endgames: King+Pawn, Rook endgames, and opposition concepts.');
+    if (blundersPerGame >= 1.5) tips.push('Before each move, ask yourself: "Does this leave anything undefended?" This one habit can eliminate most blunders.');
+    if (mistakes / gamesAnalyzed > 2) tips.push('Practice calculating 2-3 moves ahead. Many mistakes come from not considering the opponent\'s replies.');
+    if (tips.length === 0) tips.push('Keep playing and analyzing your games. Consistency in review is the key to improvement.');
+
+    // Phase bar colors
+    const phaseColor = (acpl) => acpl < 40 ? 'var(--green)' : acpl < 80 ? '#ffeb3b' : acpl < 120 ? 'var(--orange)' : 'var(--red)';
+    const maxACPL = Math.max(openingACPL, middleACPL, endgameACPL, 100);
+
+    // Render
+    container.innerHTML = `
+      <div class="report-overview">
+        <div class="overview-card"><div class="ov-label">Games Analyzed</div><div class="ov-value">${gamesAnalyzed}</div><div class="ov-sub">of ${totalGamesInPeriod} total</div></div>
+        <div class="overview-card"><div class="ov-label">Win / Loss / Draw</div><div class="ov-value" style="font-size:1.2em"><span style="color:var(--green)">${wins}W</span> <span style="color:var(--red)">${losses}L</span> <span style="color:var(--orange)">${draws}D</span></div><div class="ov-sub">Win rate: ${winRate.toFixed(0)}%</div></div>
+        <div class="overview-card"><div class="ov-label">Avg CP Loss</div><div class="ov-value" style="color:${avgCPL<50?'var(--green)':avgCPL<100?'var(--orange)':'var(--red)'}">${avgCPL.toFixed(1)}</div><div class="ov-sub">Per move</div></div>
+        <div class="overview-card"><div class="ov-label">Est. Rating</div><div class="ov-value">~${estimatedRating}</div><div class="ov-sub">Based on play quality</div></div>
+        <div class="overview-card"><div class="ov-label">Accuracy</div><div class="ov-value" style="color:${accuracy>=60?'var(--green)':accuracy>=40?'var(--orange)':'var(--red)'}">${accuracy.toFixed(0)}%</div><div class="ov-sub">Good + Best moves</div></div>
+        <div class="overview-card"><div class="ov-label">Blunders / Game</div><div class="ov-value" style="color:${blundersPerGame<1?'var(--green)':blundersPerGame<2?'var(--orange)':'var(--red)'}">${blundersPerGame}</div><div class="ov-sub">${blunders} total</div></div>
+      </div>
+
+      <div class="report-section">
+        <h3>Phase Performance</h3>
+        <div class="phase-bars">
+          <div class="phase-bar"><div class="pb-label">Opening (moves 1-10)</div><div class="pb-track"><div class="pb-fill" style="width:${Math.min(100,openingACPL/maxACPL*100)}%;background:${phaseColor(openingACPL)}"></div><div class="pb-text">${openingACPL.toFixed(0)} ACPL</div></div></div>
+          <div class="phase-bar"><div class="pb-label">Middlegame (moves 11-25)</div><div class="pb-track"><div class="pb-fill" style="width:${Math.min(100,middleACPL/maxACPL*100)}%;background:${phaseColor(middleACPL)}"></div><div class="pb-text">${middleACPL.toFixed(0)} ACPL</div></div></div>
+          <div class="phase-bar"><div class="pb-label">Endgame (moves 25+)</div><div class="pb-track"><div class="pb-fill" style="width:${endgame.length>0?Math.min(100,endgameACPL/maxACPL*100):0}%;background:${endgame.length>0?phaseColor(endgameACPL):'var(--bg4)'}""></div><div class="pb-text">${endgame.length>0?endgameACPL.toFixed(0)+' ACPL':'N/A'}</div></div></div>
+        </div>
+      </div>
+
+      <div class="report-section">
+        <h3>Move Quality Distribution</h3>
+        <div class="summary-grid" style="grid-template-columns: repeat(5,1fr); gap:8px; text-align:center;">
+          <div><div style="color:#2196f3;font-size:1.4em;font-weight:bold">${bestMoves}</div><div style="font-size:0.8em;color:var(--text2)">Best</div></div>
+          <div><div style="color:var(--green);font-size:1.4em;font-weight:bold">${goodMoves}</div><div style="font-size:0.8em;color:var(--text2)">Good</div></div>
+          <div><div style="color:#ffeb3b;font-size:1.4em;font-weight:bold">${inaccuracies}</div><div style="font-size:0.8em;color:var(--text2)">Inaccuracy</div></div>
+          <div><div style="color:var(--orange);font-size:1.4em;font-weight:bold">${mistakes}</div><div style="font-size:0.8em;color:var(--text2)">Mistake</div></div>
+          <div><div style="color:var(--red);font-size:1.4em;font-weight:bold">${blunders}</div><div style="font-size:0.8em;color:var(--text2)">Blunder</div></div>
+        </div>
+      </div>
+
+      ${topOpenings.length > 0 ? `
+      <div class="report-section">
+        <h3>Opening Repertoire</h3>
+        <table class="opening-table">
+          <tr><th>Opening Moves</th><th>Games</th><th>Score</th><th>ACPL</th></tr>
+          ${topOpenings.map(o => `<tr>
+            <td style="font-family:monospace;font-size:0.85em">${o.moves}</td>
+            <td>${o.count}</td>
+            <td><span style="color:var(--green)">${o.wins}W</span>/<span style="color:var(--red)">${o.losses}L</span>/<span style="color:var(--orange)">${o.draws}D</span></td>
+            <td style="color:${o.avgACPL<50?'var(--green)':o.avgACPL<100?'var(--orange)':'var(--red)'}">${o.avgACPL.toFixed(0)}</td>
+          </tr>`).join('')}
+        </table>
+      </div>` : ''}
+
+      <div class="report-section">
+        <h3>Strengths</h3>
+        ${strengths.length > 0 ? strengths.map(s => `<div class="strength-item">${s}</div>`).join('') : '<div class="strength-item">Keep playing more games to identify clear strengths!</div>'}
+      </div>
+
+      <div class="report-section">
+        <h3>Weaknesses</h3>
+        ${weaknesses.length > 0 ? weaknesses.map(w => `<div class="weakness-item">${w}</div>`).join('') : '<div class="strength-item">No major weaknesses detected — solid play!</div>'}
+      </div>
+
+      <div class="report-section">
+        <h3>Coaching Tips</h3>
+        ${tips.map(t => `<div class="tip-item">${t}</div>`).join('')}
+      </div>`;
+
+    container.classList.add('visible');
+  }
+
+  // =================== PRACTICE ===================
+
+  _parseTimeControl() {
+    const sel = document.getElementById('practice-timecontrol').value;
+    if (sel === 'none') return null;
+    let baseMin, incSec;
+    if (sel === 'custom') {
+      baseMin = parseFloat(document.getElementById('custom-time-base').value) || 10;
+      incSec = parseInt(document.getElementById('custom-time-inc').value) || 0;
+    } else {
+      const parts = sel.split('+');
+      baseMin = parseFloat(parts[0]);
+      incSec = parseInt(parts[1]) || 0;
+    }
+    return { baseMs: Math.round(baseMin * 60 * 1000), incMs: incSec * 1000 };
+  }
+
+  _formatClock(ms) {
+    if (ms <= 0) return '0:00';
+    const totalSec = ms / 1000;
+    if (totalSec < 10) {
+      // Show tenths below 10 seconds
+      const sec = Math.floor(totalSec);
+      const tenths = Math.floor((totalSec - sec) * 10);
+      return `0:0${sec}.${tenths}`;
+    }
+    const min = Math.floor(totalSec / 60);
+    const sec = Math.floor(totalSec % 60);
+    if (min >= 60) {
+      const hr = Math.floor(min / 60);
+      const m = min % 60;
+      return `${hr}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+    }
+    return `${min}:${sec.toString().padStart(2,'0')}`;
+  }
+
+  _updateClockDisplay() {
+    const topIsWhite = this.practiceColor === 'b'; // top = opponent
+    const topColor = topIsWhite ? 'w' : 'b';
+    const bottomColor = topIsWhite ? 'b' : 'w';
+    const topEl = document.getElementById('clock-top');
+    const bottomEl = document.getElementById('clock-bottom');
+    const topTimeEl = document.getElementById('clock-top-time');
+    const bottomTimeEl = document.getElementById('clock-bottom-time');
+
+    // Always show clock rows (for captured pieces), hide time when no timer
+    topEl.classList.remove('hidden');
+    bottomEl.classList.remove('hidden');
+
+    if (!this.practiceTimerEnabled) {
+      topTimeEl.style.display = 'none';
+      bottomTimeEl.style.display = 'none';
+      topEl.classList.remove('active', 'low-time', 'flagged');
+      bottomEl.classList.remove('active', 'low-time', 'flagged');
+      // Still set piece icons
+      topEl.querySelector('.clock-icon').innerHTML = topIsWhite ? '&#9812;' : '&#9818;';
+      bottomEl.querySelector('.clock-icon').innerHTML = topIsWhite ? '&#9818;' : '&#9812;';
+      return;
+    }
+    topTimeEl.style.display = '';
+    bottomTimeEl.style.display = '';
+
+    topTimeEl.textContent = this._formatClock(this.practiceTimers[topColor]);
+    bottomTimeEl.textContent = this._formatClock(this.practiceTimers[bottomColor]);
+
+    // Set piece icons (top = opponent, bottom = player)
+    topEl.querySelector('.clock-icon').innerHTML = topIsWhite ? '&#9812;' : '&#9818;';
+    bottomEl.querySelector('.clock-icon').innerHTML = topIsWhite ? '&#9818;' : '&#9812;';
+
+    // Active highlighting
+    topEl.classList.toggle('active', this.practiceActiveClock === topColor);
+    bottomEl.classList.toggle('active', this.practiceActiveClock === bottomColor);
+
+    // Low time warning (< 30s)
+    topEl.classList.toggle('low-time', this.practiceTimers[topColor] > 0 && this.practiceTimers[topColor] < 30000);
+    bottomEl.classList.toggle('low-time', this.practiceTimers[bottomColor] > 0 && this.practiceTimers[bottomColor] < 30000);
+    topEl.classList.toggle('flagged', this.practiceTimers[topColor] <= 0);
+    bottomEl.classList.toggle('flagged', this.practiceTimers[bottomColor] <= 0);
+  }
+
+  _startClock(color) {
+    this.practiceActiveClock = color;
+    this.practiceLastTickTime = performance.now();
+    if (this.practiceTimerInterval) clearInterval(this.practiceTimerInterval);
+    this.practiceTimerInterval = setInterval(() => this._tickClock(), 100);
+    this._updateClockDisplay();
+  }
+
+  _stopClock() {
+    this.practiceActiveClock = null;
+    if (this.practiceTimerInterval) {
+      clearInterval(this.practiceTimerInterval);
+      this.practiceTimerInterval = null;
+    }
+    this._updateClockDisplay();
+  }
+
+  _tickClock() {
+    if (!this.practiceActiveClock) return;
+    const now = performance.now();
+    const elapsed = now - this.practiceLastTickTime;
+    this.practiceLastTickTime = now;
+    this.practiceTimers[this.practiceActiveClock] -= elapsed;
+
+    if (this.practiceTimers[this.practiceActiveClock] <= 0) {
+      this.practiceTimers[this.practiceActiveClock] = 0;
+      this._stopClock();
+      this._onTimeout(this.practiceActiveClock || (this.practiceChess ? this.practiceChess.turn() : 'w'));
+      return;
+    }
+    this._updateClockDisplay();
+  }
+
+  _onTimeout(loser) {
+    this._stopClock();
+    this.boards.practice.disableInteraction();
+    document.getElementById('btn-takeback').disabled = true;
+    document.getElementById('btn-draw').disabled = true;
+    const resultEl = document.getElementById('game-result');
+    if (loser === this.practiceColor) {
+      resultEl.textContent = 'You lost on time!';
+      resultEl.style.background = 'rgba(244,67,54,0.2)';
+    } else {
+      resultEl.textContent = 'Engine lost on time - You win!';
+      resultEl.style.background = 'rgba(76,175,80,0.2)';
+    }
+    this._updateClockDisplay();
+  }
+
+  _switchClock(movedColor) {
+    // Add increment to the player who just moved
+    if (this.practiceTimerEnabled && this.practiceIncrement > 0) {
+      this.practiceTimers[movedColor] += this.practiceIncrement;
+    }
+    // Start opponent's clock
+    const nextColor = movedColor === 'w' ? 'b' : 'w';
+    this._startClock(nextColor);
+  }
+
+  async startPractice() {
+    if (!this.engine.ready) return;
+
+    // Stop any existing timer
+    this._stopClock();
+
+    this.practiceColor = document.getElementById('practice-color').value;
+    const difficulty = parseInt(document.getElementById('practice-difficulty').value);
+    this.engine.setSkillLevel(difficulty);
+
+    // Parse time control
+    const tc = this._parseTimeControl();
+    this.practiceTimerEnabled = !!tc;
+    if (tc) {
+      this.practiceTimers = { w: tc.baseMs, b: tc.baseMs };
+      this.practiceIncrement = tc.incMs;
+    } else {
+      this.practiceTimers = { w: 0, b: 0 };
+      this.practiceIncrement = 0;
+    }
+
+    this.practiceChess = new Chess();
+    this.boards.practice.setPosition(this.practiceChess.fen());
+    this.boards.practice.setLastMove(null, null);
+
+    if (this.practiceColor === 'b' && !this.boards.practice.flipped) this.boards.practice.flip();
+    if (this.practiceColor === 'w' && this.boards.practice.flipped) this.boards.practice.flip();
+
+    this.boards.practice.enableInteraction(
+      this.practiceChess,
+      (move) => this._onPracticeMove(move),
+      this.practiceColor
+    );
+
+    document.getElementById('practice-feedback').textContent = '';
+    document.getElementById('practice-move-list').innerHTML = '';
+    document.getElementById('game-result').textContent = '';
+    document.getElementById('game-result').style.background = 'transparent';
+    document.getElementById('btn-takeback').disabled = false;
+    document.getElementById('btn-draw').disabled = false;
+    document.getElementById('captured-top').innerHTML = '';
+    document.getElementById('captured-bottom').innerHTML = '';
+
+    // Init hint state
+    this.practiceHintsEnabled = document.getElementById('practice-hints-toggle').checked;
+    this.practiceFenHistory = [this.practiceChess.fen()];
+    this.practiceMoveClassifications = [];
+    this.practiceHintPending = false;
+    this.practiceHintGeneration++;
+    document.getElementById('practice-hint-box').style.display = 'none';
+
+    this._updateClockDisplay();
+
+    // If player is black, engine moves first
+    if (this.practiceColor === 'b') {
+      if (this.practiceTimerEnabled) this._startClock('w');
+      await this._makeEngineMove();
+      this.practiceFenHistory.push(this.practiceChess.fen()); // Track engine's opening move
+      if (this.practiceTimerEnabled) this._switchClock('w');
+    } else {
+      // White's turn — start player's clock
+      if (this.practiceTimerEnabled) this._startClock('w');
+    }
+  }
+
+  async _onPracticeMove(move) {
+    const movedColor = move.color; // 'w' or 'b'
+
+    // Increment hint generation to cancel any stale hint analysis
+    this.practiceHintGeneration++;
+    const hintGen = this.practiceHintGeneration;
+
+    // Capture FEN before this move (last entry in history) and after
+    const fenBefore = this.practiceFenHistory[this.practiceFenHistory.length - 1];
+    const fenAfter = this.practiceChess.fen();
+    const moveIndex = this.practiceChess.history().length - 1; // 0-based half-move index
+    this.practiceFenHistory.push(fenAfter);
+
+    this.boards.practice.setLastMove(move.from, move.to);
+    this._updatePracticeMoveList();
+
+    // Switch clock: add increment to player, start engine's clock
+    if (this.practiceTimerEnabled) {
+      this._switchClock(movedColor);
+    }
+
+    // Show move in feedback area
+    document.getElementById('practice-feedback').textContent = move.san;
+    document.getElementById('practice-feedback').style.color = 'var(--text2)';
+
+    if (this.practiceChess.game_over()) {
+      // Run hint analysis before showing result (for the final move)
+      if (this.practiceHintsEnabled && this.engine.ready) {
+        await this._runHintAnalysis(fenBefore, fenAfter, move, moveIndex, hintGen);
+      }
+      this._showGameResult();
+      return;
+    }
+
+    // Engine's turn
+    this.boards.practice.disableInteraction();
+    document.getElementById('btn-draw').disabled = true;
+    await this._makeEngineMove();
+
+    // Track engine's move FEN
+    this.practiceFenHistory.push(this.practiceChess.fen());
+
+    if (this.practiceTimers[this.practiceChess.turn() === 'w' ? 'b' : 'w'] <= 0 && this.practiceTimerEnabled) {
+      return; // Timeout already handled
+    }
+
+    if (this.practiceChess.game_over()) {
+      // Run hint on last player move before showing result
+      if (this.practiceHintsEnabled && this.engine.ready) {
+        await this._runHintAnalysis(fenBefore, fenAfter, move, moveIndex, hintGen);
+      }
+      this._showGameResult();
+      return;
+    }
+
+    // Switch clock back to player
+    const engineColor = movedColor === 'w' ? 'b' : 'w';
+    if (this.practiceTimerEnabled) {
+      this._switchClock(engineColor);
+    }
+
+    document.getElementById('btn-draw').disabled = false;
+    this.boards.practice.enableInteraction(
+      this.practiceChess,
+      (move) => this._onPracticeMove(move),
+      this.practiceColor
+    );
+
+    // Run hint analysis AFTER engine has moved (so engine Worker is free)
+    // Not awaited — runs in background; generation check prevents stale updates
+    if (this.practiceHintsEnabled && this.engine.ready) {
+      this._runHintAnalysis(fenBefore, fenAfter, move, moveIndex, hintGen);
+    }
+  }
+
+  async _makeEngineMove() {
+    const fen = this.practiceChess.fen();
+    let bestUCI;
+    const difficulty = parseInt(document.getElementById('practice-difficulty').value) || 10;
+
+    if (this.practiceTimerEnabled) {
+      // SF18 WASM lite doesn't handle "go wtime/btime" reliably, so we
+      // calculate movetime ourselves from the remaining clock + increment.
+      const engineColor = this.practiceColor === 'w' ? 'b' : 'w';
+      const remaining = this.practiceTimers[engineColor];
+      const inc = this.practiceIncrement;
+      const moveNum = Math.ceil(this.practiceChess.history().length / 2);
+      // Estimate moves left (min 10) and allocate time accordingly
+      const movesLeft = Math.max(10, 40 - moveNum);
+      let movetime = Math.round(remaining / movesLeft + inc * 0.7);
+      // Clamp: at least 200ms, at most 60% of remaining time
+      movetime = Math.max(200, Math.min(movetime, remaining * 0.6));
+      const result = await this.engine.evaluate(fen, { movetime });
+      bestUCI = result.bestMoveUCI;
+    } else {
+      // Use movetime for human-like speed (scales with difficulty)
+      // Low difficulty = fast moves, high difficulty = deeper analysis
+      const movetime = Math.round(300 + difficulty * 85); // 300ms (level 0) → 2000ms (level 20)
+      const result = await this.engine.evaluate(fen, { movetime });
+      bestUCI = result.bestMoveUCI;
+    }
+
+    if (!bestUCI || bestUCI === '(none)') return;
+
+    const from = bestUCI.substring(0, 2);
+    const to = bestUCI.substring(2, 4);
+    const promo = bestUCI.length > 4 ? bestUCI[4] : undefined;
+    const move = this.practiceChess.move({from, to, promotion: promo});
+    if (move) {
+      this.boards.practice.setPosition(this.practiceChess.fen());
+      this.boards.practice.setLastMove(from, to);
+      this._updatePracticeMoveList();
+    }
+  }
+
+  _updatePracticeMoveList() {
+    const container = document.getElementById('practice-move-list');
+    const history = this.practiceChess.history();
+    container.innerHTML = '';
+    for (let i = 0; i < history.length; i += 2) {
+      const row = document.createElement('div');
+      row.className = 'move-row';
+      const cls1 = this.practiceMoveClassifications[i] || '';
+      const cls2 = (i+1 < history.length) ? (this.practiceMoveClassifications[i+1] || '') : '';
+      row.innerHTML = `<span class="move-num">${Math.floor(i/2)+1}.</span>
+        <span class="move-cell${cls1 ? ' ' + cls1 : ''}">${history[i]}</span>
+        ${i+1 < history.length ? `<span class="move-cell${cls2 ? ' ' + cls2 : ''}">${history[i+1]}</span>` : ''}`;
+      container.appendChild(row);
+    }
+    container.scrollTop = container.scrollHeight;
+    this._updateCapturedPieces();
+  }
+
+  _updateCapturedPieces() {
+    if (!this.practiceChess) return;
+    // Count pieces on the board
+    const board = this.practiceChess.board();
+    const counts = { w: {p:0,n:0,b:0,r:0,q:0}, b: {p:0,n:0,b:0,r:0,q:0} };
+    for (const row of board) {
+      for (const sq of row) {
+        if (sq && counts[sq.color] && counts[sq.color][sq.type] !== undefined) {
+          counts[sq.color][sq.type]++;
+        }
+      }
+    }
+    // Starting counts
+    const start = {p:8,n:2,b:2,r:2,q:1};
+    // Captured = starting - remaining
+    const capturedByWhite = {}; // black pieces that white captured
+    const capturedByBlack = {}; // white pieces that black captured
+    const PIECE_VALUES = {p:1,n:3,b:3,r:5,q:9};
+    let whiteMatAdv = 0;
+    for (const p of ['q','r','b','n','p']) {
+      capturedByWhite[p] = start[p] - counts.b[p]; // black pieces missing = captured by white
+      capturedByBlack[p] = start[p] - counts.w[p]; // white pieces missing = captured by black
+      whiteMatAdv += (capturedByWhite[p] - capturedByBlack[p]) * PIECE_VALUES[p];
+    }
+    // Build display strings using piece symbols
+    const blackPieceMap = {q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+    const whitePieceMap = {q:'♕',r:'♖',b:'♗',n:'♘',p:'♙'};
+
+    const buildHtml = (captured, pieceMap, adv) => {
+      let html = '';
+      for (const p of ['q','r','b','n','p']) {
+        for (let i = 0; i < captured[p]; i++) html += pieceMap[p];
+      }
+      if (adv > 0) html += `<span class="cap-adv">+${adv}</span>`;
+      return html;
+    };
+
+    // Top = opponent, bottom = player
+    const topIsWhite = this.practiceColor === 'b';
+    const topCaptured = topIsWhite ? capturedByWhite : capturedByBlack;
+    const bottomCaptured = topIsWhite ? capturedByBlack : capturedByWhite;
+    const topPieceMap = topIsWhite ? blackPieceMap : whitePieceMap; // pieces they captured (opponent's color)
+    const bottomPieceMap = topIsWhite ? whitePieceMap : blackPieceMap;
+    const topAdv = topIsWhite ? whiteMatAdv : -whiteMatAdv;
+    const bottomAdv = topIsWhite ? -whiteMatAdv : whiteMatAdv;
+
+    document.getElementById('captured-top').innerHTML = buildHtml(topCaptured, topPieceMap, topAdv);
+    document.getElementById('captured-bottom').innerHTML = buildHtml(bottomCaptured, bottomPieceMap, bottomAdv);
+  }
+
+  // ── Practice Hint Analysis ──────────────────────────────
+  _showPracticeHint(classification, san, bestMoveSAN, wcBefore, wcAfter) {
+    const box = document.getElementById('practice-hint-box');
+    if (!this.practiceHintsEnabled) { box.style.display = 'none'; return; }
+
+    box.style.display = '';
+    // Remove old hint-* classes
+    box.className = 'practice-hint-box' + (classification ? ' hint-' + classification : '');
+
+    const badgeMap = {
+      brilliant: '<span class="analysis-badge badge-brilliant">Brilliant</span>',
+      best: '<span class="analysis-badge badge-best">Best</span>',
+      excellent: '<span class="analysis-badge badge-excellent">Excellent</span>',
+      good: '<span class="analysis-badge badge-good">Good</span>',
+      book: '<span class="analysis-badge badge-book">Book</span>',
+      inaccuracy: '<span class="analysis-badge badge-inaccuracy">Inaccuracy</span>',
+      mistake: '<span class="analysis-badge badge-mistake">Mistake</span>',
+      blunder: '<span class="analysis-badge badge-blunder">Blunder</span>'
+    };
+    document.getElementById('hint-badge').innerHTML = badgeMap[classification] || '';
+    document.getElementById('hint-move-text').textContent = san;
+
+    // Explanation
+    const detail = document.getElementById('hint-detail');
+    const wcDrop = Math.round(wcBefore - wcAfter);
+    if (classification === 'blunder') {
+      detail.textContent = bestMoveSAN ? `Best was ${bestMoveSAN} (${wcDrop}% win chance lost)` : `${wcDrop}% win chance lost`;
+    } else if (classification === 'mistake') {
+      detail.textContent = bestMoveSAN ? `Better was ${bestMoveSAN} (${wcDrop}% lost)` : `${wcDrop}% win chance lost`;
+    } else if (classification === 'inaccuracy') {
+      detail.textContent = bestMoveSAN ? `Slightly better: ${bestMoveSAN}` : 'Slight inaccuracy';
+    } else if (classification === 'brilliant') {
+      detail.textContent = 'Brilliant sacrifice — engine\'s top choice!';
+    } else if (classification === 'best') {
+      detail.textContent = 'Engine\'s top move';
+    } else if (classification === 'excellent') {
+      detail.textContent = 'Very close to the best move';
+    } else if (classification === 'book') {
+      detail.textContent = 'Standard opening move';
+    } else {
+      detail.textContent = 'Solid move';
+    }
+
+    // Win chance bar (from player's perspective)
+    const fill = document.getElementById('hint-wc-fill');
+    fill.style.width = Math.max(0, Math.min(100, wcAfter)) + '%';
+    document.getElementById('hint-wc-label').textContent = Math.round(wcAfter) + '%';
+  }
+
+  async _runHintAnalysis(fenBefore, fenAfter, move, moveIndex, generation) {
+    if (!this.engine.ready || this.practiceHintPending) return;
+    this.practiceHintPending = true;
+
+    try {
+      // Eval position BEFORE the move (to get best move + baseline)
+      // Use movetime 500ms for quick hint evals
+      const beforeResult = await this.engine.evaluate(fenBefore, { movetime: 500 });
+      if (this.practiceHintGeneration !== generation) return; // stale — player made another move
+
+      const beforeSideToMove = fenBefore.split(' ')[1]; // 'w' or 'b'
+      const cpBeforeWhite = evalToWhite(beforeResult.score, beforeSideToMove);
+      const bestMoveUCI = beforeResult.bestMoveUCI || '';
+
+      // Eval position AFTER the move
+      const afterResult = await this.engine.evaluate(fenAfter, { movetime: 500 });
+      if (this.practiceHintGeneration !== generation) return; // stale
+
+      const afterSideToMove = fenAfter.split(' ')[1];
+      const cpAfterWhite = evalToWhite(afterResult.score, afterSideToMove);
+
+      // Win chances from player's perspective
+      const isWhite = this.practiceColor === 'w';
+      const wcBefore = isWhite ? winChance(cpBeforeWhite) : (100 - winChance(cpBeforeWhite));
+      const wcAfter = isWhite ? winChance(cpAfterWhite) : (100 - winChance(cpAfterWhite));
+      const wcDrop = wcBefore - wcAfter;
+
+      // Get best move SAN for display
+      let bestMoveSAN = '';
+      if (bestMoveUCI && bestMoveUCI.length >= 4) {
+        try {
+          const tempChess = new Chess(fenBefore);
+          const from = bestMoveUCI.substring(0, 2);
+          const to = bestMoveUCI.substring(2, 4);
+          const promo = bestMoveUCI.length > 4 ? bestMoveUCI[4] : undefined;
+          const bestMove = tempChess.move({from, to, promotion: promo});
+          if (bestMove) bestMoveSAN = bestMove.san;
+        } catch(e) {}
+      }
+
+      // Check for sacrifice
+      let isSac = false;
+      try {
+        const tempChess = new Chess(fenBefore);
+        isSac = isSacrificialMove(tempChess, move.san);
+      } catch(e) {}
+
+      const playedMoveUCI = move.from + move.to + (move.promotion || '');
+      const classification = classifyMove(wcDrop, {
+        moveIndex, san: move.san,
+        isCapture: !!move.captured, isSacrifice: isSac,
+        bestMoveUCI, playedMoveUCI,
+        wcBefore, wcAfter
+      });
+
+      // Final staleness check before updating UI
+      if (this.practiceHintGeneration !== generation) return;
+
+      // Store classification for move list coloring
+      this.practiceMoveClassifications[moveIndex] = classification;
+      this._updatePracticeMoveList();
+
+      // Show hint box
+      this._showPracticeHint(classification, move.san, bestMoveSAN, wcBefore, wcAfter);
+
+    } catch(e) {
+      console.warn('Hint analysis error:', e);
+    } finally {
+      this.practiceHintPending = false;
+    }
+  }
+
+  _showGameResult(customMsg, customBg) {
+    this._stopClock();
+    this.boards.practice.disableInteraction();
+    const resultEl = document.getElementById('game-result');
+    document.getElementById('btn-takeback').disabled = true;
+    document.getElementById('btn-draw').disabled = true;
+
+    if (customMsg) {
+      resultEl.textContent = customMsg;
+      resultEl.style.background = customBg || 'rgba(255,152,0,0.2)';
+      return;
+    }
+
+    if (this.practiceChess.in_checkmate()) {
+      const loser = this.practiceChess.turn();
+      if (loser === this.practiceColor) {
+        resultEl.textContent = 'Checkmate - You lose!';
+        resultEl.style.background = 'rgba(244,67,54,0.2)';
+      } else {
+        resultEl.textContent = 'Checkmate - You win!';
+        resultEl.style.background = 'rgba(76,175,80,0.2)';
+      }
+    } else if (this.practiceChess.in_stalemate()) {
+      resultEl.textContent = 'Stalemate - Draw!';
+      resultEl.style.background = 'rgba(255,152,0,0.2)';
+    } else if (this.practiceChess.in_draw()) {
+      resultEl.textContent = 'Draw!';
+      resultEl.style.background = 'rgba(255,152,0,0.2)';
+    } else {
+      resultEl.textContent = 'Game Over';
+      resultEl.style.background = 'var(--bg4)';
+    }
+  }
+
+  async practiceOfferDraw() {
+    if (!this.practiceChess || this.practiceChess.game_over()) return;
+
+    // Check automatic draw conditions first
+    if (this.practiceChess.in_threefold_repetition()) {
+      this._showGameResult('Draw by repetition!', 'rgba(255,152,0,0.2)');
+      return;
+    }
+    if (this.practiceChess.in_draw()) {
+      this._showGameResult('Draw by 50-move rule!', 'rgba(255,152,0,0.2)');
+      return;
+    }
+    if (this.practiceChess.insufficient_material()) {
+      this._showGameResult('Draw — insufficient material!', 'rgba(255,152,0,0.2)');
+      return;
+    }
+
+    // Engine decides based on evaluation
+    const feedback = document.getElementById('practice-feedback');
+    feedback.textContent = 'Offering draw...';
+    feedback.style.color = 'var(--text2)';
+
+    try {
+      const evalResult = await this.engine.evaluate(this.practiceChess.fen(), 12);
+      const evalWhite = evalToWhite(evalResult.score, this.practiceChess.turn());
+      // Eval from engine's perspective (engine is the non-player)
+      const engineColor = this.practiceColor === 'w' ? 'b' : 'w';
+      const engineEval = engineColor === 'w' ? evalWhite : -evalWhite;
+
+      // Engine accepts draw if position is roughly equal or worse for engine
+      // |eval| < 100cp → 70% accept, < 50cp → 90% accept, losing → always accept
+      let acceptChance;
+      if (engineEval < -100) acceptChance = 1.0;       // Engine is losing → always accepts
+      else if (engineEval < -50) acceptChance = 0.9;
+      else if (engineEval < 50) acceptChance = 0.7;
+      else if (engineEval < 100) acceptChance = 0.3;
+      else if (engineEval < 200) acceptChance = 0.1;
+      else acceptChance = 0;                            // Engine is winning big → never
+
+      if (Math.random() < acceptChance) {
+        this._showGameResult('Draw agreed!', 'rgba(255,152,0,0.2)');
+      } else {
+        feedback.textContent = 'Draw declined — engine wants to play on!';
+        feedback.style.color = 'var(--orange)';
+      }
+    } catch (e) {
+      feedback.textContent = 'Draw declined.';
+      feedback.style.color = 'var(--orange)';
+    }
+  }
+
+  async practiceTakeback() {
+    if (!this.practiceChess || this.practiceChess.history().length < 2) return;
+    // Undo engine move and player move
+    this.practiceChess.undo();
+    this.practiceChess.undo();
+    // Pop FEN history and classifications for the two undone moves
+    if (this.practiceFenHistory.length > 0) this.practiceFenHistory.pop();
+    if (this.practiceFenHistory.length > 0) this.practiceFenHistory.pop();
+    const histLen = this.practiceChess.history().length;
+    this.practiceMoveClassifications.length = Math.min(this.practiceMoveClassifications.length, histLen);
+
+    this.boards.practice.setPosition(this.practiceChess.fen());
+    this.boards.practice.setLastMove(null, null);
+    this._updatePracticeMoveList();
+    document.getElementById('practice-feedback').textContent = 'Took back last move. Try again!';
+    document.getElementById('practice-feedback').style.color = 'var(--text2)';
+    document.getElementById('practice-hint-box').style.display = 'none';
+
+    this.boards.practice.enableInteraction(
+      this.practiceChess,
+      (move) => this._onPracticeMove(move),
+      this.practiceColor
+    );
+  }
+}
+
+// ============================================================
+//  INITIALIZE
+// ============================================================
+const app = new App();
+app.init();
+</script>
+</body>
+</html>

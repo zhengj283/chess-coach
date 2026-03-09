@@ -150,6 +150,15 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
 .setting-group select, .setting-group input[type="range"] { width: 100%; padding: 6px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); }
 .practice-feedback { text-align: center; padding: 8px; font-size: 0.9em; min-height: 32px; margin-top: 8px; }
 .game-result { text-align: center; font-size: 1.2em; font-weight: bold; margin-top: 12px; padding: 10px; border-radius: 8px; }
+.saved-games-section { margin-top: 24px; }
+.saved-games-section h3 { margin-bottom: 12px; font-size: 1em; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+.saved-game-card { background: var(--bg2); border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--bg3); margin-bottom: 8px; }
+.saved-game-card:hover { border-color: var(--bg4); }
+.saved-game-info { flex: 1; min-width: 0; }
+.saved-game-info .sg-title { font-size: 0.88em; font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-game-info .sg-meta { font-size: 0.78em; color: var(--text2); }
+.sg-delete { background: transparent; border: 1px solid var(--bg4); color: var(--text2); width: 28px; height: 28px; border-radius: 4px; flex-shrink: 0; }
+.sg-delete:hover { background: var(--bg4); color: var(--text); }
 
 /* Practice Hint Box */
 .practice-hint-box { width: var(--board-size); margin: 6px auto 0; padding: 10px 12px; border-radius: 8px; background: var(--bg3); border-left: 4px solid var(--text2); font-size: 0.88em; transition: border-color 0.3s; }
@@ -255,6 +264,23 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
 /* Loading spinner */
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--text2); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-left: 6px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* Import tab enhancements */
+.import-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.import-filters select { flex: 1; min-width: 100px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); font-size: 0.85em; }
+.import-filters label { font-size: 0.8em; color: var(--text2); display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 90px; }
+.game-card { position: relative; }
+.game-card.selected { border-color: var(--accent); background: rgba(233,69,96,0.08); }
+.game-card-checkbox { position: absolute; top: 10px; right: 10px; width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+#import-action-bar { display: none; position: sticky; bottom: 0; background: var(--bg2); border-top: 1px solid var(--bg4); padding: 12px 16px; border-radius: 0 0 10px 10px; gap: 12px; align-items: center; margin-top: 8px; backdrop-filter: blur(8px); }
+#import-action-bar.visible { display: flex; }
+.pgn-template-link { font-size: 0.82em; color: var(--accent); cursor: pointer; text-decoration: underline; background: none; border: none; padding: 0; }
+/* Saved Reports */
+.saved-report-card { background: var(--bg2); border-radius: 8px; padding: 14px; margin-bottom: 10px; border: 1px solid var(--bg3); display: flex; align-items: center; gap: 12px; }
+.saved-report-card:hover { border-color: var(--bg4); }
+.saved-report-info { flex: 1; min-width: 0; }
+.saved-report-name { font-weight: 600; font-size: 0.95em; margin-bottom: 4px; }
+.saved-report-meta { font-size: 0.78em; color: var(--text2); }
+.saved-report-stats { font-size: 0.8em; color: var(--text2); margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -279,13 +305,45 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
           <div class="input-group">
             <input type="text" id="chess-com-username" placeholder="Chess.com username">
             <button id="fetch-btn" class="btn-primary">Fetch Games</button>
+            <button id="refresh-btn" class="btn-secondary" title="Re-fetch with current filters" style="display:none">↺</button>
+          </div>
+          <div class="import-filters">
+            <label>Time Period
+              <select id="import-period">
+                <option value="1">Last 1 month</option>
+                <option value="3" selected>Last 3 months</option>
+                <option value="6">Last 6 months</option>
+                <option value="12">Last 12 months</option>
+              </select>
+            </label>
+            <label>Time Control
+              <select id="import-timecontrol">
+                <option value="all">All</option>
+                <option value="bullet">Bullet</option>
+                <option value="blitz">Blitz</option>
+                <option value="rapid">Rapid</option>
+                <option value="daily">Daily</option>
+              </select>
+            </label>
+            <label>Max Games
+              <select id="import-maxgames">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
           </div>
           <div id="fetch-status"></div>
         </div>
         <div class="import-card">
           <h2>Or Paste PGN</h2>
-          <textarea id="pgn-input" rows="8" placeholder="Paste one or more PGN games here..."></textarea>
-          <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+          <textarea id="pgn-input" rows="6" placeholder="Paste one or more PGN games here..."></textarea>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+            <button class="pgn-template-link" id="btn-pgn-template">Show template</button>
+            <button class="pgn-template-link" id="btn-pgn-clear" style="color:var(--text2)">Clear</button>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:4px;">
             <label style="font-size:0.85em;color:var(--text2);white-space:nowrap;">Analyze side:</label>
             <select id="pgn-player-color" style="padding:6px 12px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);font-size:0.9em;">
               <option value="w">White</option>
@@ -297,6 +355,11 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
       </div>
       <div id="profile-card" class="profile-card"></div>
       <div id="games-list" class="games-list"></div>
+      <div id="import-action-bar">
+        <span id="import-selection-count" style="color:var(--text2);font-size:0.9em;">0 games selected</span>
+        <button id="btn-import-action" class="btn-primary">Analyze Game</button>
+        <button id="btn-import-deselect" class="btn-secondary">Clear Selection</button>
+      </div>
     </section>
 
     <!-- ANALYZE TAB -->
@@ -366,39 +429,10 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
 
     <!-- REPORT TAB -->
     <section id="tab-report" class="tab-panel">
+      <div id="report-empty-msg" style="background:var(--bg2);border-radius:10px;padding:20px;margin-bottom:16px;color:var(--text2);display:none;">
+        Go to the <strong style="color:var(--text)">Import tab</strong>, select games using checkboxes, then click <strong style="color:var(--text)">Generate Report</strong>.
+      </div>
       <div class="report-controls">
-        <div class="field">
-          <label>Chess.com Username</label>
-          <input type="text" id="report-username" placeholder="username">
-        </div>
-        <div class="field">
-          <label>Time Period</label>
-          <select id="report-period">
-            <option value="1">Last 1 month</option>
-            <option value="3" selected>Last 3 months</option>
-            <option value="6">Last 6 months</option>
-            <option value="12">Last 12 months</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Time Control</label>
-          <select id="report-timecontrol">
-            <option value="all">All</option>
-            <option value="bullet">Bullet</option>
-            <option value="blitz" selected>Blitz</option>
-            <option value="rapid">Rapid</option>
-            <option value="daily">Daily</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Max Games to Analyze</label>
-          <select id="report-maxgames">
-            <option value="5">5 (fast)</option>
-            <option value="10" selected>10</option>
-            <option value="20">20 (thorough)</option>
-            <option value="50">50 (deep)</option>
-          </select>
-        </div>
         <div class="field">
           <label>Analysis Speed</label>
           <select id="report-speed">
@@ -440,6 +474,12 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
           </div>
         </div>
         <div class="puzzle-info">
+          <div style="margin-bottom:12px;">
+            <label style="font-size:0.8em;color:var(--text2);display:block;margin-bottom:4px;">Puzzle Source</label>
+            <select id="puzzle-source" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);font-size:0.9em;">
+              <option value="current">Current game (analyzed)</option>
+            </select>
+          </div>
           <div class="puzzle-stats">
             <div class="stat">Solved: <span id="puzzles-solved">0</span></div>
             <div class="stat">Failed: <span id="puzzles-failed">0</span></div>
@@ -548,7 +588,13 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
           </div>
           <div id="practice-move-list" class="move-list" style="margin-top:12px;max-height:200px"></div>
           <div id="game-result" class="game-result"></div>
+          <button id="btn-save-game" class="btn-secondary" style="width:100%;margin-top:8px;display:none;">Save Game</button>
         </div>
+      </div>
+      <div class="saved-games-section">
+        <h3>Saved Practice Games</h3>
+        <div id="saved-games-list"></div>
+        <div id="saved-games-empty" style="color:var(--text2);font-size:0.88em;display:none;">No saved games yet. Finish a practice game and click "Save Game".</div>
       </div>
     </section>
   </main>
@@ -1006,22 +1052,19 @@ function classifyMove(winChanceDrop, opts = {}) {
   // Book moves: first 10 half-moves (moves 1-5 for each side)
   if (moveIndex < 10 && winChanceDrop < 12) return 'book';
 
-  // === Phase-aware thresholds (calibrated against Chess.com) ===
-  // Opening (first 24 half-moves / 12 full moves): engine evals are noisier
-  const isOpening = moveIndex < 24;
+  // === Thresholds — uniform across phases, calibrated to Chess.com ===
+  // Chess.com uses ~20/10/5 win-% drop thresholds regardless of game phase.
+  // Phase-aware thresholds were removed because they caused blunders in the
+  // opening to be downgraded to inaccuracies, inconsistent with Chess.com.
+  const thresholds = [20, 10, 5]; // [blunder, mistake, inaccuracy]
 
-  // Thresholds: [blunder, mistake, inaccuracy]
-  // Chess.com uses Stockfish 16+ NNUE at depth 18+; we now use Stockfish 18 NNUE (lite).
-  // Phase-aware thresholds and context-aware caps for Chess.com-like classifications.
-  const thresholds = isOpening
-    ? [35, 14, 7]     // Opening: high blunder bar (engine noise), moderate mistake bar
-    : [25, 12, 6];    // Middlegame/endgame: Chess.com-aligned
-
-  // === Context-aware caps (Chess.com style) ===
-  // 1. Already losing badly (<15% win chance) → cap at mistake
-  const alreadyLost = wcBefore < 15;
-  // 2. Still comfortably winning after → cap at inaccuracy (not a real blunder)
-  const stillWinning = wcBefore > 80 && wcAfter > 60;
+  // === Context-aware caps (conservative) ===
+  // 1. Truly hopeless position (<10% win chance): blunder→mistake, mistake→inaccuracy
+  const alreadyLost = wcBefore < 10;
+  // 2. Still totally dominant after (≥90% before, ≥75% after): cap blunder→mistake only
+  //    (Chess.com still marks blunders when you drop from e.g. 85%→63%; only cap
+  //     when the position remains overwhelming, not merely "winning")
+  const stillDominant = wcBefore >= 90 && wcAfter >= 75;
 
   // Determine raw classification
   let raw;
@@ -1032,9 +1075,8 @@ function classifyMove(winChanceDrop, opts = {}) {
 
   // Apply context caps
   if (raw === 'blunder' && alreadyLost) raw = 'mistake';
-  if (raw === 'blunder' && stillWinning) raw = 'inaccuracy';
-  if (raw === 'mistake' && stillWinning) raw = 'inaccuracy';
-  if (raw === 'mistake' && alreadyLost && wcBefore < 8) raw = 'inaccuracy';
+  if (raw === 'blunder' && stillDominant) raw = 'mistake';
+  if (raw === 'mistake' && alreadyLost) raw = 'inaccuracy';
 
   if (raw) return raw;
 
@@ -1162,6 +1204,7 @@ class App {
     this.practiceHintPending = false; // prevent overlapping hint evals
     this.practiceHintGeneration = 0; // generation counter to cancel stale hint evals
     this.username = '';
+    this.selectedGames = [];
   }
 
   async init() {
@@ -1184,6 +1227,9 @@ class App {
     }
 
     this._bindUI();
+    this._renderSavedGames();
+    this._loadImportCache();
+    this._renderSavedReports();
   }
 
   _bindUI() {
@@ -1239,15 +1285,42 @@ class App {
     document.getElementById('btn-new-game').addEventListener('click', () => this.startPractice());
     document.getElementById('btn-takeback').addEventListener('click', () => this.practiceTakeback());
     document.getElementById('btn-draw').addEventListener('click', () => this.practiceOfferDraw());
+    document.getElementById('btn-save-game').addEventListener('click', () => this.savePracticeGame());
     document.getElementById('practice-timecontrol').addEventListener('change', (e) => {
       document.getElementById('custom-time-group').style.display = e.target.value === 'custom' ? 'block' : 'none';
     });
 
     // Report
     document.getElementById('btn-generate-report').addEventListener('click', () => this.generateReport());
-    // Auto-fill report username from import
-    document.getElementById('chess-com-username').addEventListener('change', (e) => {
-      document.getElementById('report-username').value = e.target.value;
+
+    // Import action bar
+    document.getElementById('btn-import-action').addEventListener('click', () => this._handleImportAction());
+    document.getElementById('btn-import-deselect').addEventListener('click', () => {
+      this.selectedGames = [];
+      document.querySelectorAll('.game-card-checkbox').forEach(cb => { cb.checked = false; cb.closest('.game-card').classList.remove('selected'); });
+      this._updateActionBar();
+    });
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      const username = document.getElementById('chess-com-username').value.trim();
+      if (username) this.fetchChessComGames(username);
+    });
+
+    // PGN template/clear
+    document.getElementById('btn-pgn-template').addEventListener('click', () => {
+      const ta = document.getElementById('pgn-input');
+      const sample = `[Event "Casual Game"]\n[White "Player1"]\n[Black "Player2"]\n[Result "1-0"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 1-0\n\n[Event "Casual Game"]\n[White "Player2"]\n[Black "Player1"]\n[Result "0-1"]\n\n1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Bg5 Be7 0-1`;
+      ta.value = sample;
+    });
+    document.getElementById('btn-pgn-clear').addEventListener('click', () => {
+      document.getElementById('pgn-input').value = '';
+    });
+
+    // Puzzle source
+    document.getElementById('puzzle-source').addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val === 'current') return; // puzzles already loaded from analysis
+      const id = parseInt(val.replace('report:', ''));
+      this._loadPuzzlesFromReport(id);
     });
   }
 
@@ -1262,8 +1335,15 @@ class App {
     this.username = username.toLowerCase();
     const statusEl = document.getElementById('fetch-status');
     const fetchBtn = document.getElementById('fetch-btn');
+    const refreshBtn = document.getElementById('refresh-btn');
     statusEl.innerHTML = 'Fetching profile &amp; games...<span class="spinner"></span>';
+    statusEl.style.color = '';
     fetchBtn.disabled = true;
+
+    // Read filter values
+    const period = parseInt(document.getElementById('import-period').value);
+    const timeControl = document.getElementById('import-timecontrol').value;
+    const maxGames = parseInt(document.getElementById('import-maxgames').value);
 
     try {
       // Fetch profile + stats + archives in parallel
@@ -1284,11 +1364,21 @@ class App {
       const archives = archData.archives || [];
       if (archives.length === 0) throw new Error('No games found for this player');
 
-      // Fetch last 2 months
-      statusEl.innerHTML = 'Fetching recent games...<span class="spinner"></span>';
-      const recentArchives = archives.slice(-2);
+      // Filter archives by period
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - period);
+      const cutoffStr = `${cutoff.getFullYear()}/${String(cutoff.getMonth()+1).padStart(2,'0')}`;
+      const relevantArchives = archives.filter(url => {
+        const match = url.match(/(\d{4})\/(\d{2})$/);
+        if (!match) return false;
+        return `${match[1]}/${match[2]}` >= cutoffStr;
+      });
+
+      if (relevantArchives.length === 0) throw new Error('No game archives in the selected period');
+
+      statusEl.innerHTML = `Fetching games from ${relevantArchives.length} month(s)...<span class="spinner"></span>`;
       let allGames = [];
-      for (const url of recentArchives) {
+      for (const url of relevantArchives) {
         const resp = await fetch(url);
         if (resp.ok) {
           const data = await resp.json();
@@ -1296,10 +1386,26 @@ class App {
         }
       }
 
-      if (allGames.length === 0) throw new Error('No games found in recent months');
+      if (allGames.length === 0) throw new Error('No games found in the selected period');
 
-      // Take last 50 games
-      allGames = allGames.slice(-50);
+      // Filter by time control
+      if (timeControl !== 'all') {
+        allGames = allGames.filter(g => {
+          const tc = g.time_control || '';
+          const seconds = parseInt(tc.split('+')[0]) || 0;
+          if (timeControl === 'bullet') return seconds > 0 && seconds < 180;
+          if (timeControl === 'blitz') return seconds >= 180 && seconds < 600;
+          if (timeControl === 'rapid') return seconds >= 600 && seconds <= 1800;
+          if (timeControl === 'daily') return seconds > 1800 || tc.includes('/');
+          return true;
+        });
+      }
+
+      allGames = allGames.filter(g => g.pgn && g.pgn.includes('1.'));
+      if (allGames.length === 0) throw new Error('No games found matching filters');
+
+      // Take last N games
+      allGames = allGames.slice(-maxGames);
       this.games = allGames.map(g => ({
         pgn: g.pgn,
         white: g.white?.username || '?',
@@ -1312,7 +1418,17 @@ class App {
         url: g.url || ''
       }));
 
-      statusEl.textContent = `Found ${this.games.length} recent games`;
+      // Save cache
+      try {
+        localStorage.setItem('chess-coach-import-cache', JSON.stringify({
+          username: this.username, period, timeControl, maxGames,
+          games: this.games, fetchedAt: Date.now()
+        }));
+      } catch(e) {}
+
+      statusEl.textContent = `Found ${this.games.length} games`;
+      refreshBtn.style.display = 'inline-block';
+      this.selectedGames = [];
       this._renderGamesList();
     } catch (e) {
       statusEl.textContent = 'Error: ' + e.message;
@@ -1424,6 +1540,8 @@ class App {
   _renderGamesList() {
     const list = document.getElementById('games-list');
     list.innerHTML = '';
+    this.selectedGames = [];
+    this._updateActionBar();
     this.games.forEach((g, i) => {
       const card = document.createElement('div');
       card.className = 'game-card';
@@ -1461,13 +1579,34 @@ class App {
         }
       }
 
+      // Checkbox
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'game-card-checkbox';
+      cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        if (cb.checked) {
+          if (!this.selectedGames.includes(g)) this.selectedGames.push(g);
+          card.classList.add('selected');
+        } else {
+          this.selectedGames = this.selectedGames.filter(x => x !== g);
+          card.classList.remove('selected');
+        }
+        this._updateActionBar();
+      });
+
       card.innerHTML = `
         <div class="players">${g.white} (${g.whiteRating}) vs ${g.black} (${g.blackRating})</div>
         <div class="meta">
           <span class="result ${resultClass}">${resultText}</span>
           &bull; ${tcDisplay}
         </div>`;
-      card.addEventListener('click', () => this.selectGame(i));
+      card.appendChild(cb);
+      // Click card body (not checkbox) = immediate single-game analyze
+      card.addEventListener('click', (e) => {
+        if (e.target === cb) return;
+        this.selectGame(i);
+      });
       list.appendChild(card);
     });
   }
@@ -2078,14 +2217,46 @@ class App {
 
   // =================== REPORT (BULK ANALYSIS) ===================
 
+  _renderReportGamePicker() {
+    const list = document.getElementById('report-game-list');
+    list.innerHTML = '';
+    if (!this.games || this.games.length === 0) {
+      list.innerHTML = '<span style="color:var(--text2)">No games imported yet. Go to the Import tab first.</span>';
+      this._updateReportPickCount();
+      return;
+    }
+    for (let i = 0; i < this.games.length; i++) {
+      const g = this.games[i];
+      const pc = this.getPlayerColor(g);
+      const resultStr = pc === 'w' ? g.whiteResult : g.blackResult;
+      const resultClass = resultStr === 'win' ? 'win' : (resultStr === 'lose' || resultStr === 'checkmated' || resultStr === 'resigned' || resultStr === 'timeout') ? 'loss' : 'draw';
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 2px;cursor:pointer;';
+      row.innerHTML = `<input type="checkbox" class="report-game-check" value="${i}" checked>
+        <span style="flex:1">${g.white} vs ${g.black}</span>
+        <span class="result ${resultClass}" style="padding:1px 6px;">${resultStr || '?'}</span>
+        <span style="color:var(--text2)">${g.timeControl || ''}</span>`;
+      row.querySelector('input').addEventListener('change', () => this._updateReportPickCount());
+      list.appendChild(row);
+    }
+    this._updateReportPickCount();
+  }
+
+  _updateReportPickCount() {
+    const total = document.querySelectorAll('.report-game-check').length;
+    const checked = document.querySelectorAll('.report-game-check:checked').length;
+    document.getElementById('report-pick-count').textContent = total ? `(${checked}/${total} selected)` : '';
+  }
+
   async generateReport() {
     if (!this.engine.ready) { alert('Engine not ready yet'); return; }
-    const username = document.getElementById('report-username').value.trim().toLowerCase();
-    if (!username) { alert('Enter a Chess.com username'); return; }
 
-    const period = parseInt(document.getElementById('report-period').value);
-    const timeControl = document.getElementById('report-timecontrol').value;
-    const maxGames = parseInt(document.getElementById('report-maxgames').value);
+    if (this.selectedGames.length === 0) {
+      document.getElementById('report-empty-msg').style.display = 'block';
+      return;
+    }
+    document.getElementById('report-empty-msg').style.display = 'none';
+
     const statusEl = document.getElementById('report-status');
     const progressBar = document.getElementById('report-progress-bar');
     const progressFill = document.getElementById('report-progress-fill');
@@ -2095,58 +2266,23 @@ class App {
     progressFill.style.width = '0%';
     document.getElementById('report-content').classList.remove('visible');
 
+    const username = this.username || this.selectedGames[0]?.white || 'Player';
+    const timeControl = 'imported';
+    const period = 0;
+
     try {
-      // 1. Fetch archives
-      statusEl.innerHTML = 'Fetching game archives...<span class="spinner"></span>';
-      const archResp = await fetch(`https://api.chess.com/pub/player/${username}/games/archives`);
-      if (!archResp.ok) throw new Error('Player not found');
-      const archData = await archResp.json();
-      const archives = archData.archives || [];
-
-      // Filter archives by period
-      const cutoff = new Date();
-      cutoff.setMonth(cutoff.getMonth() - period);
-      const cutoffStr = `${cutoff.getFullYear()}/${String(cutoff.getMonth()+1).padStart(2,'0')}`;
-      const relevantArchives = archives.filter(url => {
-        const match = url.match(/(\d{4})\/(\d{2})$/);
-        if (!match) return false;
-        return `${match[1]}/${match[2]}` >= cutoffStr;
+      // Normalize selected game objects to match the API game format
+      const gamesToAnalyze = this.selectedGames.map(g => {
+        const pc = this.getPlayerColor(g);
+        return {
+          pgn: g.pgn,
+          white: { username: g.white, rating: g.whiteRating, result: g.whiteResult || '' },
+          black: { username: g.black, rating: g.blackRating, result: g.blackResult || '' },
+          _playerColor: pc,
+        };
       });
-
-      if (relevantArchives.length === 0) throw new Error('No archives found for this period');
-
-      // 2. Fetch all games from relevant archives
-      statusEl.innerHTML = `Fetching games from ${relevantArchives.length} month(s)...<span class="spinner"></span>`;
-      let allGames = [];
-      for (const url of relevantArchives) {
-        const resp = await fetch(url);
-        if (resp.ok) {
-          const data = await resp.json();
-          allGames = allGames.concat(data.games || []);
-        }
-      }
-
-      // 3. Filter by time control
-      if (timeControl !== 'all') {
-        allGames = allGames.filter(g => {
-          const tc = g.time_control || '';
-          const seconds = parseInt(tc.split('+')[0]) || 0;
-          if (timeControl === 'bullet') return seconds > 0 && seconds < 180;
-          if (timeControl === 'blitz') return seconds >= 180 && seconds < 600;
-          if (timeControl === 'rapid') return seconds >= 600 && seconds <= 1800;
-          if (timeControl === 'daily') return seconds > 1800 || tc.includes('/');
-          return true;
-        });
-      }
-
-      // Filter to only games with PGN that have actual moves
-      allGames = allGames.filter(g => g.pgn && g.pgn.includes('1.'));
-
-      if (allGames.length === 0) throw new Error('No games found matching filters');
-
-      // Take most recent N games
-      const gamesToAnalyze = allGames.slice(-maxGames);
-      statusEl.innerHTML = `Analyzing ${gamesToAnalyze.length} games (of ${allGames.length} total)...<span class="spinner"></span>`;
+      const allGames = gamesToAnalyze;
+      statusEl.innerHTML = `Analyzing ${gamesToAnalyze.length} selected game(s)...<span class="spinner"></span>`;
 
       // 4. Analyze each game
       const allAnalyses = [];
@@ -2169,8 +2305,8 @@ class App {
         const sans = chess.history();
         if (sans.length < 6) continue; // skip very short games
 
-        const isWhite = (g.white?.username || '').toLowerCase() === username;
-        const playerColor = isWhite ? 'w' : 'b';
+        const playerColor = g._playerColor ?? ((g.white?.username || '').toLowerCase() === username ? 'w' : 'b');
+        const isWhite = playerColor === 'w';
         const resultStr = isWhite ? g.white?.result : g.black?.result;
 
         // Build positions
@@ -2455,7 +2591,215 @@ class App {
         ${tips.map(t => `<div class="tip-item">${t}</div>`).join('')}
       </div>`;
 
+    // Add save button
+    const saveBtn = document.createElement('div');
+    saveBtn.style.cssText = 'margin-top:16px;display:flex;gap:12px;align-items:center;';
+    saveBtn.innerHTML = `<button id="btn-save-report" class="btn-primary">Save Report</button><span id="save-report-status" style="font-size:0.85em;color:var(--text2);"></span>`;
+    container.appendChild(saveBtn);
+    document.getElementById('btn-save-report').addEventListener('click', () => {
+      this._saveReport(username, allAnalyses, gameInfos, avgCPL, blunders, mistakes, accuracy, wins, losses, draws, gamesAnalyzed, phases);
+    });
+
     container.classList.add('visible');
+  }
+
+  // =================== IMPORT HELPERS ===================
+
+  _updateActionBar() {
+    const n = this.selectedGames.length;
+    const bar = document.getElementById('import-action-bar');
+    const countEl = document.getElementById('import-selection-count');
+    const btn = document.getElementById('btn-import-action');
+    if (n === 0) {
+      bar.classList.remove('visible');
+    } else {
+      bar.classList.add('visible');
+      countEl.textContent = `${n} game${n > 1 ? 's' : ''} selected`;
+      btn.textContent = n === 1 ? 'Analyze Game' : `Generate Report (${n} games)`;
+    }
+  }
+
+  _handleImportAction() {
+    const selected = this.selectedGames;
+    if (selected.length === 0) return;
+    if (selected.length === 1) {
+      const i = this.games.indexOf(selected[0]);
+      if (i >= 0) this.selectGame(i);
+    } else {
+      this.switchTab('report');
+    }
+  }
+
+  _loadImportCache() {
+    try {
+      const raw = localStorage.getItem('chess-coach-import-cache');
+      if (!raw) return;
+      const cache = JSON.parse(raw);
+      if (!cache.games || !cache.username) return;
+      this.games = cache.games;
+      this.username = cache.username;
+      // Restore UI
+      document.getElementById('chess-com-username').value = cache.username;
+      if (cache.period) document.getElementById('import-period').value = cache.period;
+      if (cache.timeControl) document.getElementById('import-timecontrol').value = cache.timeControl;
+      if (cache.maxGames) document.getElementById('import-maxgames').value = cache.maxGames;
+      document.getElementById('refresh-btn').style.display = 'inline-block';
+      const ago = cache.fetchedAt ? this._timeAgo(cache.fetchedAt) : '';
+      document.getElementById('fetch-status').textContent = `Loaded ${this.games.length} cached games for @${cache.username}${ago ? ' (fetched ' + ago + ')' : ''}. Hit ↺ to refresh.`;
+      this._renderGamesList();
+    } catch(e) {}
+  }
+
+  _timeAgo(ts) {
+    const diff = Date.now() - ts;
+    const min = Math.floor(diff / 60000);
+    if (min < 2) return 'just now';
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    return `${Math.floor(hr/24)}d ago`;
+  }
+
+  // =================== SAVED REPORTS ===================
+
+  _saveReport(username, allAnalyses, gameInfos, avgCPL, blunders, mistakes, accuracy, wins, losses, draws, gamesAnalyzed, phases) {
+    // Derive theme from worst phase weakness
+    let theme = 'general';
+    if (phases && phases.length > 0) {
+      const worst = phases.reduce((a, b) => a.acpl > b.acpl ? a : b);
+      const nameMap = {'Opening': 'opening', 'Middlegame': 'middlegame', 'Endgame': 'endgame'};
+      theme = nameMap[worst.name] || 'general';
+    }
+    if (blunders / gamesAnalyzed >= 2) theme = 'blunders';
+
+    // Extract puzzle positions (blunders/mistakes from player moves)
+    const puzzlePositions = [];
+    for (let gi = 0; gi < allAnalyses.length; gi++) {
+      const info = gameInfos[gi];
+      for (const m of allAnalyses[gi]) {
+        if (m.playerColor === info.playerColor && (m.classification === 'blunder' || m.classification === 'mistake')) {
+          puzzlePositions.push({ fen: m.fenBefore, bestMoveUCI: m.bestMoveSAN });
+        }
+      }
+    }
+
+    const name = `${username}_${theme}`;
+    const report = {
+      id: Date.now(), name, username, theme,
+      date: new Date().toLocaleDateString(),
+      summary: { avgCPL: avgCPL.toFixed(1), blunders, mistakes, accuracy: accuracy.toFixed(0), wins, losses, draws, gamesAnalyzed },
+      puzzlePositions
+    };
+
+    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    saved.unshift(report);
+    if (saved.length > 20) saved.length = 20; // keep max 20
+    localStorage.setItem('chess-coach-reports', JSON.stringify(saved));
+
+    document.getElementById('save-report-status').textContent = `Saved as "${name}"`;
+    document.getElementById('btn-save-report').disabled = true;
+    this._renderSavedReports();
+    this._updatePuzzleSourceDropdown();
+  }
+
+  _renderSavedReports() {
+    const container = document.getElementById('report-content');
+    if (!container) return;
+    // Remove existing saved reports section if present
+    const existing = document.getElementById('saved-reports-section');
+    if (existing) existing.remove();
+
+    // Render saved reports in Report tab below the generate section
+    const reportTab = document.getElementById('tab-report');
+    let section = document.getElementById('saved-reports-section');
+    if (!section) {
+      section = document.createElement('div');
+      section.id = 'saved-reports-section';
+      reportTab.appendChild(section);
+    }
+
+    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    if (saved.length === 0) {
+      section.innerHTML = '';
+      return;
+    }
+
+    section.innerHTML = `<h3 style="margin:20px 0 12px;font-size:1em;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;">Saved Reports</h3>` +
+      saved.map(r => `
+        <div class="saved-report-card">
+          <div class="saved-report-info">
+            <div class="saved-report-name">${r.name}</div>
+            <div class="saved-report-meta">${r.date} &bull; ${r.summary.gamesAnalyzed} games analyzed</div>
+            <div class="saved-report-stats">ACPL: ${r.summary.avgCPL} &bull; Acc: ${r.summary.accuracy}% &bull; ${r.summary.wins}W/${r.summary.losses}L/${r.summary.draws}D &bull; ${r.summary.blunders} blunders</div>
+          </div>
+          <button class="btn-secondary" onclick="app._loadSavedReport(${r.id})" style="font-size:0.82em;padding:6px 14px;">Load</button>
+          <button class="btn-secondary" onclick="app._deleteSavedReport(${r.id})" style="font-size:0.82em;padding:6px 10px;color:var(--text2);">✕</button>
+        </div>`).join('');
+  }
+
+  _loadSavedReport(id) {
+    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    const r = saved.find(x => x.id === id);
+    if (!r) return;
+    const container = document.getElementById('report-content');
+    container.innerHTML = `
+      <div class="report-section" style="text-align:center;padding:30px;">
+        <h3>${r.name}</h3>
+        <p style="color:var(--text2);margin:8px 0;">${r.date} &bull; ${r.summary.gamesAnalyzed} games</p>
+        <div class="report-overview" style="margin-top:16px;">
+          <div class="overview-card"><div class="ov-label">Avg CP Loss</div><div class="ov-value">${r.summary.avgCPL}</div></div>
+          <div class="overview-card"><div class="ov-label">Accuracy</div><div class="ov-value">${r.summary.accuracy}%</div></div>
+          <div class="overview-card"><div class="ov-label">W/L/D</div><div class="ov-value" style="font-size:1.1em"><span style="color:var(--green)">${r.summary.wins}W</span> <span style="color:var(--red)">${r.summary.losses}L</span> <span style="color:var(--orange)">${r.summary.draws}D</span></div></div>
+          <div class="overview-card"><div class="ov-label">Blunders</div><div class="ov-value" style="color:var(--red)">${r.summary.blunders}</div></div>
+          <div class="overview-card"><div class="ov-label">Mistakes</div><div class="ov-value" style="color:var(--orange)">${r.summary.mistakes}</div></div>
+        </div>
+        <p style="color:var(--text2);margin-top:16px;font-size:0.85em;">This is a summary view. Select the same games in Import tab and generate a new report for full analysis.</p>
+      </div>`;
+    container.classList.add('visible');
+    this.switchTab('report');
+  }
+
+  _deleteSavedReport(id) {
+    let saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    saved = saved.filter(r => r.id !== id);
+    localStorage.setItem('chess-coach-reports', JSON.stringify(saved));
+    this._renderSavedReports();
+    this._updatePuzzleSourceDropdown();
+  }
+
+  _updatePuzzleSourceDropdown() {
+    const sel = document.getElementById('puzzle-source');
+    // Remove old report options
+    [...sel.options].forEach(o => { if (o.value.startsWith('report:')) sel.removeChild(o); });
+    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    for (const r of saved) {
+      const opt = document.createElement('option');
+      opt.value = `report:${r.id}`;
+      opt.textContent = `${r.name} (${r.summary.gamesAnalyzed} games)`;
+      sel.appendChild(opt);
+    }
+  }
+
+  _loadPuzzlesFromReport(id) {
+    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    const r = saved.find(x => x.id === id);
+    if (!r || !r.puzzlePositions || r.puzzlePositions.length === 0) {
+      document.getElementById('puzzle-feedback').textContent = 'No puzzles saved for this report.';
+      return;
+    }
+    this.puzzles = r.puzzlePositions.map(p => ({
+      fen: p.fen, bestMove: p.bestMoveUCI, san: p.bestMoveUCI,
+      classification: 'blunder', comment: 'Find the best move'
+    }));
+    this.currentPuzzleIndex = -1;
+    this.puzzlesSolved = 0;
+    this.puzzlesFailed = 0;
+    document.getElementById('puzzles-solved').textContent = '0';
+    document.getElementById('puzzles-failed').textContent = '0';
+    document.getElementById('puzzle-accuracy').textContent = '-';
+    document.getElementById('btn-next-puzzle').disabled = false;
+    document.getElementById('puzzle-feedback').textContent = `Loaded ${this.puzzles.length} puzzles from report "${r.name}". Click Next Puzzle to start.`;
+    this.nextPuzzle();
   }
 
   // =================== PRACTICE ===================
@@ -2639,6 +2983,10 @@ class App {
     document.getElementById('btn-draw').disabled = false;
     document.getElementById('captured-top').innerHTML = '';
     document.getElementById('captured-bottom').innerHTML = '';
+    const saveBtn = document.getElementById('btn-save-game');
+    saveBtn.style.display = 'none';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save Game';
 
     // Init hint state
     this.practiceHintsEnabled = document.getElementById('practice-hints-toggle').checked;
@@ -2743,17 +3091,14 @@ class App {
     const difficulty = parseInt(document.getElementById('practice-difficulty').value) || 10;
 
     if (this.practiceTimerEnabled) {
-      // SF18 WASM lite doesn't handle "go wtime/btime" reliably, so we
-      // calculate movetime ourselves from the remaining clock + increment.
+      // SF18 WASM lite doesn't handle "go wtime/btime" — use movetime instead.
+      // Simple time allocation: base from remaining time, plus increment bonus.
       const engineColor = this.practiceColor === 'w' ? 'b' : 'w';
       const remaining = this.practiceTimers[engineColor];
       const inc = this.practiceIncrement;
-      const moveNum = Math.ceil(this.practiceChess.history().length / 2);
-      // Estimate moves left (min 10) and allocate time accordingly
-      const movesLeft = Math.max(10, 40 - moveNum);
-      let movetime = Math.round(remaining / movesLeft + inc * 0.7);
-      // Clamp: at least 200ms, at most 60% of remaining time
-      movetime = Math.max(200, Math.min(movetime, remaining * 0.6));
+      let movetime = Math.round(Math.max(300, Math.min(remaining / 40, 1500)) + inc * 0.5);
+      movetime = Math.min(movetime, Math.round(remaining * 0.1)); // never use >10% of remaining
+      movetime = Math.max(200, movetime); // at least 200ms
       const result = await this.engine.evaluate(fen, { movetime });
       bestUCI = result.bestMoveUCI;
     } else {
@@ -2976,10 +3321,7 @@ class App {
     if (customMsg) {
       resultEl.textContent = customMsg;
       resultEl.style.background = customBg || 'rgba(255,152,0,0.2)';
-      return;
-    }
-
-    if (this.practiceChess.in_checkmate()) {
+    } else if (this.practiceChess.in_checkmate()) {
       const loser = this.practiceChess.turn();
       if (loser === this.practiceColor) {
         resultEl.textContent = 'Checkmate - You lose!';
@@ -2997,6 +3339,10 @@ class App {
     } else {
       resultEl.textContent = 'Game Over';
       resultEl.style.background = 'var(--bg4)';
+    }
+
+    if (this.practiceChess && this.practiceChess.history().length > 0) {
+      document.getElementById('btn-save-game').style.display = 'block';
     }
   }
 
@@ -3049,6 +3395,114 @@ class App {
       feedback.textContent = 'Draw declined.';
       feedback.style.color = 'var(--orange)';
     }
+  }
+
+  savePracticeGame() {
+    if (!this.practiceChess || this.practiceChess.history().length === 0) return;
+
+    const difficulty = parseInt(document.getElementById('practice-difficulty').value) || 10;
+    const eloMap = {0:'800',1:'850',2:'900',3:'950',4:'1050',5:'1200',6:'1300',7:'1400',8:'1500',9:'1650',10:'1800',11:'1900',12:'2000',13:'2050',14:'2100',15:'2200',16:'2350',17:'2500',18:'2650',19:'2800',20:'3000+'};
+    const tcVal = document.getElementById('practice-timecontrol').value;
+    const resultText = document.getElementById('game-result').textContent || 'Unfinished';
+
+    let resultCode = '*';
+    const rtLower = resultText.toLowerCase();
+    if (rtLower.includes('you win') || rtLower.includes('you win')) {
+      resultCode = this.practiceColor === 'w' ? '1-0' : '0-1';
+    } else if (rtLower.includes('you lose')) {
+      resultCode = this.practiceColor === 'w' ? '0-1' : '1-0';
+    } else if (rtLower.includes('draw') || rtLower.includes('stalemate')) {
+      resultCode = '1/2-1/2';
+    }
+
+    const entry = {
+      id: Date.now(),
+      date: new Date().toISOString(),
+      pgn: this.practiceChess.pgn(),
+      playerColor: this.practiceColor,
+      difficulty,
+      eloApprox: eloMap[difficulty] || '?',
+      timeControl: tcVal,
+      result: resultText,
+      resultCode,
+    };
+
+    const saved = JSON.parse(localStorage.getItem('chess-coach-practice-games') || '[]');
+    saved.unshift(entry);
+    if (saved.length > 50) saved.length = 50;
+    localStorage.setItem('chess-coach-practice-games', JSON.stringify(saved));
+
+    const btn = document.getElementById('btn-save-game');
+    btn.disabled = true;
+    btn.textContent = 'Saved!';
+    this._renderSavedGames();
+  }
+
+  _renderSavedGames() {
+    const saved = JSON.parse(localStorage.getItem('chess-coach-practice-games') || '[]');
+    const list = document.getElementById('saved-games-list');
+    const empty = document.getElementById('saved-games-empty');
+    list.innerHTML = '';
+
+    if (saved.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    for (const sg of saved) {
+      const card = document.createElement('div');
+      card.className = 'saved-game-card';
+      const dateStr = new Date(sg.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+      const colorStr = sg.playerColor === 'w' ? 'White' : 'Black';
+      const rtLower = (sg.result || '').toLowerCase();
+      const resultClass = rtLower.includes('you win') ? 'win' : rtLower.includes('you lose') ? 'loss' : 'draw';
+      const tcStr = (!sg.timeControl || sg.timeControl === 'none') ? 'No timer' : sg.timeControl;
+
+      card.innerHTML = `
+        <div class="saved-game-info">
+          <div class="sg-title">You (${colorStr}) vs Engine Lv${sg.difficulty} (~${sg.eloApprox} ELO)</div>
+          <div class="sg-meta">${dateStr} &bull; ${tcStr} &bull; <span class="result ${resultClass}" style="padding:1px 6px;">${sg.result}</span></div>
+        </div>
+        <button class="btn-primary sg-review" style="font-size:0.8em;padding:6px 12px;white-space:nowrap;">Review</button>
+        <button class="sg-delete" title="Delete">✕</button>`;
+
+      card.querySelector('.sg-review').addEventListener('click', () => this.loadSavedPracticeGame(sg.id));
+      card.querySelector('.sg-delete').addEventListener('click', () => this.deleteSavedPracticeGame(sg.id));
+      list.appendChild(card);
+    }
+  }
+
+  loadSavedPracticeGame(id) {
+    const saved = JSON.parse(localStorage.getItem('chess-coach-practice-games') || '[]');
+    const sg = saved.find(g => g.id === id);
+    if (!sg) return;
+
+    const eloMap = {0:'800',1:'850',2:'900',3:'950',4:'1050',5:'1200',6:'1300',7:'1400',8:'1500',9:'1650',10:'1800',11:'1900',12:'2000',13:'2050',14:'2100',15:'2200',16:'2350',17:'2500',18:'2650',19:'2800',20:'3000+'};
+    const elo = sg.eloApprox || eloMap[sg.difficulty] || '?';
+
+    const game = {
+      pgn: sg.pgn,
+      white: sg.playerColor === 'w' ? 'You' : `Engine (Lv${sg.difficulty})`,
+      black: sg.playerColor === 'b' ? 'You' : `Engine (Lv${sg.difficulty})`,
+      whiteRating: sg.playerColor === 'w' ? '-' : elo,
+      blackRating: sg.playerColor === 'b' ? '-' : elo,
+      whiteResult: '',
+      blackResult: '',
+      timeControl: sg.timeControl,
+    };
+
+    this.games = [game];
+    this.username = null;
+    this.pgnPlayerColor = sg.playerColor;
+    this.selectGame(0);
+  }
+
+  deleteSavedPracticeGame(id) {
+    let saved = JSON.parse(localStorage.getItem('chess-coach-practice-games') || '[]');
+    saved = saved.filter(g => g.id !== id);
+    localStorage.setItem('chess-coach-practice-games', JSON.stringify(saved));
+    this._renderSavedGames();
   }
 
   async practiceTakeback() {

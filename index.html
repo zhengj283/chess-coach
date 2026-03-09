@@ -474,12 +474,6 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
           </div>
         </div>
         <div class="puzzle-info">
-          <div style="margin-bottom:12px;">
-            <label style="font-size:0.8em;color:var(--text2);display:block;margin-bottom:4px;">Puzzle Source</label>
-            <select id="puzzle-source" style="width:100%;padding:8px 12px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg3);color:var(--text);font-size:0.9em;">
-              <option value="current">Current game (analyzed)</option>
-            </select>
-          </div>
           <div class="puzzle-stats">
             <div class="stat">Solved: <span id="puzzles-solved">0</span></div>
             <div class="stat">Failed: <span id="puzzles-failed">0</span></div>
@@ -1315,13 +1309,6 @@ class App {
       document.getElementById('pgn-input').value = '';
     });
 
-    // Puzzle source
-    document.getElementById('puzzle-source').addEventListener('change', (e) => {
-      const val = e.target.value;
-      if (val === 'current') return; // puzzles already loaded from analysis
-      const id = parseInt(val.replace('report:', ''));
-      this._loadPuzzlesFromReport(id);
-    });
   }
 
   switchTab(tab) {
@@ -2131,17 +2118,18 @@ class App {
   _loadPuzzle(index) {
     const puzzle = this.puzzles[index];
     this.puzzleChess = new Chess(puzzle.fen);
+    const toMove = this.puzzleChess.turn(); // ground truth from FEN
 
     // Orient board
-    if (puzzle.playerColor === 'b' && !this.boards.puzzles.flipped) this.boards.puzzles.flip();
-    if (puzzle.playerColor === 'w' && this.boards.puzzles.flipped) this.boards.puzzles.flip();
+    if (toMove === 'b' && !this.boards.puzzles.flipped) this.boards.puzzles.flip();
+    if (toMove === 'w' && this.boards.puzzles.flipped) this.boards.puzzles.flip();
 
     this.boards.puzzles.setPosition(puzzle.fen);
     this.boards.puzzles.setLastMove(null, null);
-    this.boards.puzzles.enableInteraction(this.puzzleChess, (move) => this._onPuzzleMove(move), puzzle.playerColor);
+    this.boards.puzzles.enableInteraction(this.puzzleChess, (move) => this._onPuzzleMove(move), toMove);
 
     document.getElementById('puzzle-prompt').textContent =
-      `Puzzle ${index + 1}/${this.puzzles.length}: Find the best move for ${puzzle.playerColor === 'w' ? 'White' : 'Black'}`;
+      `Puzzle ${index + 1}/${this.puzzles.length}: Find the best move for ${toMove === 'w' ? 'White' : 'Black'}`;
     document.getElementById('puzzle-prompt').style.color = 'var(--text)';
     document.getElementById('puzzle-feedback').textContent =
       `You played ${puzzle.playedMove} (${puzzle.classification}). Can you find the better move?`;
@@ -2678,7 +2666,13 @@ class App {
       const info = gameInfos[gi];
       for (const m of allAnalyses[gi]) {
         if (m.playerColor === info.playerColor && (m.classification === 'blunder' || m.classification === 'mistake')) {
-          puzzlePositions.push({ fen: m.fenBefore, bestMoveUCI: m.bestMoveSAN });
+          puzzlePositions.push({
+            fen: m.fenBefore,
+            bestMoveUCI: m.bestMoveUCI,
+            bestMoveSAN: m.bestMoveSAN,
+            playedMove: m.san,
+            classification: m.classification
+          });
         }
       }
     }
@@ -2699,7 +2693,6 @@ class App {
     document.getElementById('save-report-status').textContent = `Saved as "${name}"`;
     document.getElementById('btn-save-report').disabled = true;
     this._renderSavedReports();
-    this._updatePuzzleSourceDropdown();
   }
 
   _renderSavedReports() {
@@ -2729,10 +2722,10 @@ class App {
         <div class="saved-report-card">
           <div class="saved-report-info">
             <div class="saved-report-name">${r.name}</div>
-            <div class="saved-report-meta">${r.date} &bull; ${r.summary.gamesAnalyzed} games analyzed</div>
+            <div class="saved-report-meta">${r.date} &bull; ${r.summary.gamesAnalyzed} games &bull; ${r.puzzlePositions?.length || 0} puzzles</div>
             <div class="saved-report-stats">ACPL: ${r.summary.avgCPL} &bull; Acc: ${r.summary.accuracy}% &bull; ${r.summary.wins}W/${r.summary.losses}L/${r.summary.draws}D &bull; ${r.summary.blunders} blunders</div>
           </div>
-          <button class="btn-secondary" onclick="app._loadSavedReport(${r.id})" style="font-size:0.82em;padding:6px 14px;">Load</button>
+          <button class="btn-primary" onclick="app._practiceFromReport(${r.id})" style="font-size:0.82em;padding:6px 14px;" ${!r.puzzlePositions?.length ? 'disabled' : ''}>Practice Puzzles</button>
           <button class="btn-secondary" onclick="app._deleteSavedReport(${r.id})" style="font-size:0.82em;padding:6px 10px;color:var(--text2);">✕</button>
         </div>`).join('');
   }
@@ -2764,32 +2757,21 @@ class App {
     saved = saved.filter(r => r.id !== id);
     localStorage.setItem('chess-coach-reports', JSON.stringify(saved));
     this._renderSavedReports();
-    this._updatePuzzleSourceDropdown();
   }
 
-  _updatePuzzleSourceDropdown() {
-    const sel = document.getElementById('puzzle-source');
-    // Remove old report options
-    [...sel.options].forEach(o => { if (o.value.startsWith('report:')) sel.removeChild(o); });
-    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
-    for (const r of saved) {
-      const opt = document.createElement('option');
-      opt.value = `report:${r.id}`;
-      opt.textContent = `${r.name} (${r.summary.gamesAnalyzed} games)`;
-      sel.appendChild(opt);
-    }
-  }
-
-  _loadPuzzlesFromReport(id) {
+  _practiceFromReport(id) {
     const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
     const r = saved.find(x => x.id === id);
     if (!r || !r.puzzlePositions || r.puzzlePositions.length === 0) {
-      document.getElementById('puzzle-feedback').textContent = 'No puzzles saved for this report.';
+      alert('No puzzles saved in this report.');
       return;
     }
     this.puzzles = r.puzzlePositions.map(p => ({
-      fen: p.fen, bestMove: p.bestMoveUCI, san: p.bestMoveUCI,
-      classification: 'blunder', comment: 'Find the best move'
+      fen: p.fen,
+      bestMoveUCI: p.bestMoveUCI,
+      bestMoveSAN: p.bestMoveSAN,
+      playedMove: p.playedMove,
+      classification: p.classification || 'blunder'
     }));
     this.currentPuzzleIndex = -1;
     this.puzzlesSolved = 0;
@@ -2798,8 +2780,13 @@ class App {
     document.getElementById('puzzles-failed').textContent = '0';
     document.getElementById('puzzle-accuracy').textContent = '-';
     document.getElementById('btn-next-puzzle').disabled = false;
-    document.getElementById('puzzle-feedback').textContent = `Loaded ${this.puzzles.length} puzzles from report "${r.name}". Click Next Puzzle to start.`;
+    document.getElementById('puzzle-feedback').textContent = `Loaded ${this.puzzles.length} puzzles from "${r.name}". Click Next Puzzle to start!`;
+    this.switchTab('puzzles');
     this.nextPuzzle();
+  }
+
+  _loadPuzzlesFromReport(id) {
+    this._practiceFromReport(id);
   }
 
   // =================== PRACTICE ===================

@@ -89,8 +89,8 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
 .board-controls { display: flex; gap: 6px; margin-top: 8px; justify-content: center; }
 .ctrl-btn { background: var(--bg3); border: 1px solid var(--bg4); color: var(--text); width: 40px; height: 36px; border-radius: 6px; font-size: 1em; display: flex; align-items: center; justify-content: center; }
 .ctrl-btn:hover { background: var(--bg4); }
-.analysis-section { flex: 1; min-width: 0; background: var(--bg2); border-radius: 10px; padding: 16px; max-height: calc(var(--board-size) + 100px); display: flex; flex-direction: column; }
-.move-list { flex: 1; overflow-y: auto; font-family: monospace; font-size: 0.85em; margin-bottom: 10px; min-height: 100px; max-height: 300px; }
+.analysis-section { flex: 1; min-width: 0; background: var(--bg2); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.move-list { font-family: monospace; font-size: 0.85em; overflow-y: auto; height: calc(var(--board-size) * 0.55); min-height: 120px; border-radius: 6px; }
 .move-list::-webkit-scrollbar { width: 6px; }
 .move-list::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
 .move-row { display: flex; align-items: stretch; }
@@ -202,7 +202,6 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
   :root { --board-size: min(360px, calc(100vw - 40px)); }
   .analyze-container, .puzzle-container, .practice-container { flex-direction: column; }
   .import-cards { grid-template-columns: 1fr; }
-  .analysis-section { max-height: none; }
   header { padding: 8px 12px; gap: 10px; }
 }
 /* Player Profile Card */
@@ -2125,6 +2124,7 @@ class App {
     if (toMove === 'w' && this.boards.puzzles.flipped) this.boards.puzzles.flip();
 
     this.boards.puzzles.setPosition(puzzle.fen);
+    this.boards.puzzles.clearHighlightClasses();
     this.boards.puzzles.setLastMove(null, null);
     this.boards.puzzles.enableInteraction(this.puzzleChess, (move) => this._onPuzzleMove(move), toMove);
 
@@ -2132,7 +2132,7 @@ class App {
       `Puzzle ${index + 1}/${this.puzzles.length}: Find the best move for ${toMove === 'w' ? 'White' : 'Black'}`;
     document.getElementById('puzzle-prompt').style.color = 'var(--text)';
     document.getElementById('puzzle-feedback').textContent =
-      `You played ${puzzle.playedMove} (${puzzle.classification}). Can you find the better move?`;
+      `You played ${puzzle.playedMove || '?'} (${puzzle.classification || 'mistake'}). Can you find the better move?`;
     document.getElementById('btn-hint').disabled = false;
     document.getElementById('btn-solution').disabled = false;
   }
@@ -2141,13 +2141,13 @@ class App {
     const puzzle = this.puzzles[this.currentPuzzleIndex];
     const moveUCI = move.from + move.to + (move.promotion || '');
 
-    if (moveUCI === puzzle.bestMoveUCI || move.san === puzzle.bestMoveSAN) {
+    if (moveUCI === this._resolvePuzzleUCI(puzzle) || move.san === puzzle.bestMoveSAN) {
       // Correct!
       this.puzzlesSolved++;
       document.getElementById('puzzle-prompt').textContent = 'Correct!';
       document.getElementById('puzzle-prompt').style.color = 'var(--green)';
       document.getElementById('puzzle-feedback').textContent =
-        `${puzzle.bestMoveSAN} is the best move. You originally played ${puzzle.playedMove}.`;
+        `${puzzle.bestMoveSAN || puzzle.bestMoveUCI || move.san} is the best move. You originally played ${puzzle.playedMove}.`;
       this.boards.puzzles.disableInteraction();
     } else {
       // Wrong
@@ -2160,15 +2160,28 @@ class App {
     this._updatePuzzleStats();
   }
 
+  _resolvePuzzleUCI(puzzle) {
+    // Return bestMoveUCI, deriving it from bestMoveSAN + FEN if missing
+    if (puzzle.bestMoveUCI && puzzle.bestMoveUCI.length >= 4) return puzzle.bestMoveUCI;
+    if (puzzle.bestMoveSAN && puzzle.fen) {
+      const tempChess = new Chess(puzzle.fen);
+      const m = tempChess.move(puzzle.bestMoveSAN);
+      if (m) return m.from + m.to + (m.promotion || '');
+    }
+    return '';
+  }
+
   showPuzzleHint() {
     if (this.currentPuzzleIndex < 0) return;
     const puzzle = this.puzzles[this.currentPuzzleIndex];
-    const bestUCI = puzzle.bestMoveUCI;
-    if (bestUCI && bestUCI.length >= 2) {
+    const bestUCI = this._resolvePuzzleUCI(puzzle);
+    if (bestUCI.length >= 4) {
       const fromSq = bestUCI.substring(0, 2);
       this.boards.puzzles.clearHighlightClasses();
       this.boards.puzzles.highlightSquare(fromSq, 'highlight-best');
       document.getElementById('puzzle-feedback').textContent = 'Hint: Look at the highlighted piece.';
+    } else {
+      document.getElementById('puzzle-feedback').textContent = 'Hint: No hint available for this puzzle.';
     }
   }
 
@@ -2179,7 +2192,7 @@ class App {
     this._updatePuzzleStats();
 
     // Make the best move
-    const bestUCI = puzzle.bestMoveUCI;
+    const bestUCI = this._resolvePuzzleUCI(puzzle);
     if (bestUCI) {
       const from = bestUCI.substring(0, 2);
       const to = bestUCI.substring(2, 4);
@@ -2189,10 +2202,11 @@ class App {
       this.boards.puzzles.setLastMove(from, to);
     }
     this.boards.puzzles.disableInteraction();
-    document.getElementById('puzzle-prompt').textContent = 'Solution: ' + puzzle.bestMoveSAN;
+    const solutionSAN = puzzle.bestMoveSAN || puzzle.bestMoveUCI || '?';
+    document.getElementById('puzzle-prompt').textContent = 'Solution: ' + solutionSAN;
     document.getElementById('puzzle-prompt').style.color = 'var(--orange)';
     document.getElementById('puzzle-feedback').textContent =
-      `The best move was ${puzzle.bestMoveSAN}. You played ${puzzle.playedMove} in the game.`;
+      `The best move was ${solutionSAN}. You played ${puzzle.playedMove} in the game.`;
   }
 
   _updatePuzzleStats() {
@@ -2349,6 +2363,7 @@ class App {
 
           let classification = 'opponent';
           let bestMoveSAN = '';
+          const bestMoveUCI2 = prevResult.bestMoveUCI || (prevResult.pv ? prevResult.pv.split(' ')[0] : '');
           if (isUserMove) {
             const wcBefore = winChance(evalWhiteBefore);
             const wcAfter = winChance(evalWhiteAfter);
@@ -2356,7 +2371,6 @@ class App {
             const pWcBefore = whoMoved === 'w' ? wcBefore : (100 - wcBefore);
             const pWcAfter = whoMoved === 'w' ? wcAfter : (100 - wcAfter);
 
-            const bestMoveUCI2 = prevResult.bestMoveUCI || (prevResult.pv ? prevResult.pv.split(' ')[0] : '');
             if (prevResult.pv) {
               const tempC = new Chess(positions[i]);
               bestMoveSAN = uciToSan(tempC, bestMoveUCI2);
@@ -2377,7 +2391,7 @@ class App {
 
           gameAnalysis.push({
             moveIndex: i, san: sans[i], playerColor: whoMoved,
-            evalDrop, classification, bestMoveSAN,
+            evalDrop, classification, bestMoveSAN, bestMoveUCI: bestMoveUCI2,
             fenBefore: positions[i]
           });
 
@@ -2726,6 +2740,7 @@ class App {
             <div class="saved-report-stats">ACPL: ${r.summary.avgCPL} &bull; Acc: ${r.summary.accuracy}% &bull; ${r.summary.wins}W/${r.summary.losses}L/${r.summary.draws}D &bull; ${r.summary.blunders} blunders</div>
           </div>
           <button class="btn-primary" onclick="app._practiceFromReport(${r.id})" style="font-size:0.82em;padding:6px 14px;" ${!r.puzzlePositions?.length ? 'disabled' : ''}>Practice Puzzles</button>
+          <button class="btn-secondary" onclick="app._printPuzzles(${r.id})" style="font-size:0.82em;padding:6px 14px;" ${!r.puzzlePositions?.length ? 'disabled' : ''}>Download PDF</button>
           <button class="btn-secondary" onclick="app._deleteSavedReport(${r.id})" style="font-size:0.82em;padding:6px 10px;color:var(--text2);">✕</button>
         </div>`).join('');
   }
@@ -2757,6 +2772,171 @@ class App {
     saved = saved.filter(r => r.id !== id);
     localStorage.setItem('chess-coach-reports', JSON.stringify(saved));
     this._renderSavedReports();
+  }
+
+  _printPuzzles(id) {
+    const saved = JSON.parse(localStorage.getItem('chess-coach-reports') || '[]');
+    const r = saved.find(x => x.id === id);
+    if (!r || !r.puzzlePositions?.length) { alert('No puzzles to download.'); return; }
+
+    // Load jsPDF on demand, then retry
+    if (!window.jspdf) {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      s.onload = () => this._printPuzzles(id);
+      s.onerror = () => alert('Failed to load PDF library. Check your internet connection.');
+      document.head.appendChild(s);
+      return;
+    }
+
+    const { jsPDF } = window.jspdf;
+
+    // ── Layout constants (points; 72pt = 1in) ──────────────────
+    const PW = 612, PH = 792;       // letter
+    const ML = 32, MR = 32, MT = 32, MB = 32;
+    const HEADER_H = 28;            // page header block
+    const COLS = 2, ROWS = 4;
+    const GAP_X = 18, GAP_Y = 14;
+    const CELL_W = (PW - ML - MR - GAP_X * (COLS - 1)) / COLS;   // ≈ 265pt
+    const CELL_H = (PH - MT - MB - HEADER_H - GAP_Y * (ROWS - 1)) / ROWS; // ≈ 163pt
+    const LABEL_H = 30;             // text above board (puzzle num + meta)
+    const COORD_W = 8;              // rank label column width
+    const COORD_H = 8;              // file label row height
+    const ANSWER_H = 14;            // answer line below board
+    const BOARD_PX = Math.floor(Math.min(CELL_W - COORD_W, CELL_H - LABEL_H - COORD_H - ANSWER_H) / 8) * 8;
+    const SQ = BOARD_PX / 8;
+
+    // ── Unicode pieces rendered onto an off-screen canvas ──────
+    const UNICODE = { K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙', k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟' };
+
+    function parseFen(fen) {
+      return fen.split(' ')[0].split('/').map(row => {
+        const cells = [];
+        for (const ch of row) {
+          if (/\d/.test(ch)) for (let i = 0; i < +ch; i++) cells.push('');
+          else cells.push(ch);
+        }
+        return cells;
+      });
+    }
+
+    function boardToPng(fen, flip) {
+      const SCALE = 3;
+      const px = BOARD_PX * SCALE;
+      const sq = SQ * SCALE;
+      const canvas = document.createElement('canvas');
+      canvas.width = px; canvas.height = px;
+      const ctx = canvas.getContext('2d');
+      const grid = parseFen(fen);
+      const rowIdx = flip ? [0,1,2,3,4,5,6,7] : [7,6,5,4,3,2,1,0];
+      const colIdx = flip ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const ri = rowIdx[row], fi = colIdx[col];
+          const light = (ri + fi) % 2 === 0;
+          ctx.fillStyle = light ? '#f0d9b5' : '#b58863';
+          ctx.fillRect(col * sq, row * sq, sq, sq);
+
+          const piece = grid[ri][fi];
+          if (piece) {
+            const isWhite = piece === piece.toUpperCase();
+            ctx.font = `${sq * 0.78}px serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const cx = col * sq + sq / 2, cy = row * sq + sq / 2;
+            if (isWhite) {
+              ctx.lineWidth = sq * 0.08;
+              ctx.strokeStyle = '#000';
+              ctx.strokeText(UNICODE[piece] || piece, cx, cy);
+              ctx.fillStyle = '#fff';
+            } else {
+              ctx.fillStyle = '#000';
+            }
+            ctx.fillText(UNICODE[piece] || piece, cx, cy);
+          }
+        }
+      }
+      // border
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = SCALE * 1.5;
+      ctx.strokeRect(0, 0, px, px);
+      return canvas.toDataURL('image/png');
+    }
+
+    // ── Build PDF ───────────────────────────────────────────────
+    const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+    const FILES_W = ['a','b','c','d','e','f','g','h'];
+    const FILES_B = ['h','g','f','e','d','c','b','a'];
+    const PER_PAGE = COLS * ROWS;
+    const totalPages = Math.ceil(r.puzzlePositions.length / PER_PAGE);
+
+    for (let pi = 0; pi < r.puzzlePositions.length; pi += PER_PAGE) {
+      if (pi > 0) doc.addPage();
+
+      // Page header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text(r.name + ' \u2014 Puzzle Worksheet', PW / 2, MT + 10, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.text(`Page ${pi / PER_PAGE + 1} of ${totalPages}  \u2022  ${r.puzzlePositions.length} puzzles`, PW / 2, MT + 20, { align: 'center' });
+      doc.setDrawColor(180);
+      doc.setLineWidth(0.5);
+      doc.line(ML, MT + HEADER_H - 2, PW - MR, MT + HEADER_H - 2);
+
+      const chunk = r.puzzlePositions.slice(pi, pi + PER_PAGE);
+      chunk.forEach((puz, ci) => {
+        const col = ci % COLS;
+        const row = Math.floor(ci / COLS);
+        const cx = ML + col * (CELL_W + GAP_X);
+        const cy = MT + HEADER_H + row * (CELL_H + GAP_Y);
+
+        const turn = (puz.fen || '').split(' ')[1] || 'w';
+        const flip = turn === 'b';
+        const side = turn === 'w' ? 'White to move' : 'Black to move';
+
+        // Puzzle number
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
+        doc.setTextColor(0);
+        doc.text(`Puzzle ${pi + ci + 1}`, cx, cy + 10);
+
+        // Meta line
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.5);
+        doc.setTextColor(80);
+        doc.text(`${side}  \u2022  You played ${puz.playedMove || '?'} (${puz.classification || 'mistake'})`, cx, cy + 20);
+        doc.setTextColor(0);
+
+        // Board image
+        const imgData = boardToPng(puz.fen, flip);
+        const bx = cx + COORD_W;
+        const by = cy + LABEL_H;
+        doc.addImage(imgData, 'PNG', bx, by, BOARD_PX, BOARD_PX);
+
+        // Rank labels
+        doc.setFontSize(6);
+        doc.setTextColor(100);
+        const ranks = flip ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
+        for (let rk = 0; rk < 8; rk++) {
+          doc.text(String(ranks[rk]), cx + COORD_W - 2, by + rk * SQ + SQ / 2 + 2, { align: 'right' });
+        }
+
+        // File labels
+        const files = flip ? FILES_B : FILES_W;
+        for (let f = 0; f < 8; f++) {
+          doc.text(files[f], bx + f * SQ + SQ / 2, by + BOARD_PX + COORD_H - 1, { align: 'center' });
+        }
+        doc.setTextColor(0);
+
+        // Answer line
+        doc.setFontSize(8);
+        doc.text('Answer: _______________', cx, by + BOARD_PX + COORD_H + ANSWER_H - 2);
+      });
+    }
+
+    doc.save(`${r.name}_puzzles.pdf`);
   }
 
   _practiceFromReport(id) {

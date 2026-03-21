@@ -1720,6 +1720,7 @@ class App {
   }
 
   _finishLoadPGN(pgnTexts) {
+    this.username = '';
     this.pgnPlayerColor = document.getElementById('pgn-player-color').value;
 
     this.games = pgnTexts.map(pgn => ({

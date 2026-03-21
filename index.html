@@ -30,6 +30,15 @@ main { padding: 20px; max-width: 1200px; margin: 0 auto; }
 
 /* Import Tab */
 .import-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.import-cards .import-card-full { grid-column: 1 / -1; }
+.scan-drop-zone { border: 2px dashed var(--bg4); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-bottom: 10px; }
+.scan-drop-zone:hover, .scan-drop-zone.dragover { border-color: var(--accent); background: rgba(233,69,96,0.06); }
+.scan-drop-zone img { max-width: 100%; max-height: 200px; border-radius: 6px; margin-top: 10px; }
+.scan-progress { display: none; align-items: center; gap: 8px; margin: 8px 0; font-size: 0.85em; color: var(--text2); }
+.scan-progress.active { display: flex; }
+#scan-result { display: none; margin-top: 10px; }
+#scan-result.visible { display: block; }
+#scan-result textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--bg4); background: var(--bg3); color: var(--text); font-size: 0.85em; font-family: monospace; resize: vertical; margin-bottom: 8px; }
 .import-card { background: var(--bg2); border-radius: 10px; padding: 20px; }
 .import-card h2 { font-size: 1.1em; margin-bottom: 12px; }
 .input-group { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -341,6 +350,7 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
             <button class="pgn-template-link" id="btn-pgn-template">Show template</button>
             <button class="pgn-template-link" id="btn-pgn-clear" style="color:var(--text2)">Clear</button>
+            <button class="pgn-template-link" id="btn-pgn-copy" style="color:var(--text2)">Copy PGN</button>
           </div>
           <div style="display:flex;gap:10px;align-items:center;margin-top:4px;">
             <label style="font-size:0.85em;color:var(--text2);white-space:nowrap;">Analyze side:</label>
@@ -349,6 +359,31 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
               <option value="b">Black</option>
             </select>
             <button id="load-pgn-btn" class="btn-primary">Load PGN</button>
+          </div>
+        </div>
+        <div class="import-card import-card-full">
+          <h2>Scan Handwritten Notation</h2>
+          <div class="scan-drop-zone" id="scan-drop-zone">
+            <input type="file" id="scan-file-input" accept="image/*" capture="environment" style="display:none">
+            <div id="scan-placeholder">
+              <div style="font-size:1.5em;margin-bottom:6px;">&#128247;</div>
+              <div style="font-size:0.9em;color:var(--text2);">Click to take a photo or upload an image of handwritten notation</div>
+              <div style="font-size:0.78em;color:var(--text2);margin-top:4px;">Supports drag &amp; drop</div>
+            </div>
+            <img id="scan-preview" style="display:none" alt="Scan preview">
+          </div>
+          <div class="scan-progress" id="scan-progress">
+            <span class="spinner"></span>
+            <span id="scan-progress-text">Recognizing text...</span>
+          </div>
+          <div id="scan-result">
+            <label style="font-size:0.85em;color:var(--text2);display:block;margin-bottom:4px;">Recognized moves (edit if needed):</label>
+            <textarea id="scan-output" rows="4"></textarea>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <button id="btn-scan-to-pgn" class="btn-primary">Load as PGN</button>
+              <button class="pgn-template-link" id="btn-scan-clear" style="color:var(--text2)">Clear</button>
+              <span id="scan-status" style="font-size:0.85em;color:var(--text2);"></span>
+            </div>
           </div>
         </div>
       </div>
@@ -594,6 +629,7 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 // ============================================================
 //  PIECE UNICODE MAP
@@ -1308,6 +1344,163 @@ class App {
       document.getElementById('pgn-input').value = '';
     });
 
+    // Copy PGN
+    document.getElementById('btn-pgn-copy').addEventListener('click', () => {
+      const ta = document.getElementById('pgn-input');
+      if (!ta.value.trim()) return;
+      navigator.clipboard.writeText(ta.value).then(() => {
+        const btn = document.getElementById('btn-pgn-copy');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 1500);
+      });
+    });
+
+    // Scan handwritten notation
+    this._initScan();
+
+  }
+
+  _initScan() {
+    const dropZone = document.getElementById('scan-drop-zone');
+    const fileInput = document.getElementById('scan-file-input');
+    const preview = document.getElementById('scan-preview');
+    const placeholder = document.getElementById('scan-placeholder');
+    const progressEl = document.getElementById('scan-progress');
+    const progressText = document.getElementById('scan-progress-text');
+    const resultEl = document.getElementById('scan-result');
+    const outputTa = document.getElementById('scan-output');
+    const statusEl = document.getElementById('scan-status');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) this._processImage(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length) this._processImage(fileInput.files[0]);
+    });
+
+    document.getElementById('btn-scan-to-pgn').addEventListener('click', () => {
+      const moves = outputTa.value.trim();
+      if (!moves) return;
+      const pgn = this._movesToPGN(moves);
+      document.getElementById('pgn-input').value = pgn;
+      statusEl.textContent = 'Loaded into PGN input above';
+    });
+
+    document.getElementById('btn-scan-clear').addEventListener('click', () => {
+      preview.style.display = 'none';
+      placeholder.style.display = '';
+      resultEl.classList.remove('visible');
+      outputTa.value = '';
+      statusEl.textContent = '';
+      fileInput.value = '';
+    });
+  }
+
+  async _processImage(file) {
+    const preview = document.getElementById('scan-preview');
+    const placeholder = document.getElementById('scan-placeholder');
+    const progressEl = document.getElementById('scan-progress');
+    const progressText = document.getElementById('scan-progress-text');
+    const resultEl = document.getElementById('scan-result');
+    const outputTa = document.getElementById('scan-output');
+    const statusEl = document.getElementById('scan-status');
+
+    // Show preview
+    const url = URL.createObjectURL(file);
+    preview.src = url;
+    preview.style.display = 'block';
+    placeholder.style.display = 'none';
+    resultEl.classList.remove('visible');
+    statusEl.textContent = '';
+
+    // Show progress
+    progressEl.classList.add('active');
+    progressText.textContent = 'Loading OCR engine...';
+
+    try {
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            progressText.textContent = `Recognizing... ${Math.round((m.progress || 0) * 100)}%`;
+          }
+        }
+      });
+
+      await worker.setParameters({
+        tessedit_char_whitelist: 'KQRBNOabcdefgh12345678x+#=-0/. \n',
+      });
+
+      progressText.textContent = 'Recognizing text...';
+      const { data: { text } } = await worker.recognize(file);
+      await worker.terminate();
+
+      const cleaned = this._cleanOCRNotation(text);
+      outputTa.value = cleaned;
+      resultEl.classList.add('visible');
+      progressEl.classList.remove('active');
+
+      if (!cleaned.trim()) {
+        statusEl.textContent = 'No chess moves detected. Try a clearer image.';
+      }
+    } catch (err) {
+      progressEl.classList.remove('active');
+      statusEl.textContent = 'OCR failed: ' + err.message;
+    }
+  }
+
+  _cleanOCRNotation(raw) {
+    let text = raw.replace(/\r\n/g, '\n');
+    // Join lines into one continuous string
+    text = text.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Fix castling notation variants (before other substitutions)
+    text = text.replace(/[0O][-–][0O][-–][0O]/g, 'O-O-O');
+    text = text.replace(/[0O][-–][0O]/g, 'O-O');
+
+    // Fix en-dash/em-dash used as hyphen in results
+    text = text.replace(/[–—]/g, '-');
+
+    const tokens = text.split(/\s+/);
+    const cleaned = [];
+    const movePattern = /^[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8]([=][QRBN])?[+#]?$/;
+    const castlePattern = /^O-O(-O)?[+#]?$/;
+    const resultPattern = /^(1-0|0-1|1\/2-1\/2|\*)$/;
+    const numberPattern = /^\d+\.+$/;
+
+    for (const tok of tokens) {
+      let t = tok.replace(/[,;]/g, '').trim();
+      if (!t) continue;
+
+      // Per-token OCR fixes (only where safe)
+      // In move-number contexts, fix common digit misreads
+      if (/^\d/.test(t)) {
+        t = t.replace(/l/g, '1').replace(/O/g, '0').replace(/S/g, '5');
+      }
+
+      if (numberPattern.test(t) || movePattern.test(t) || castlePattern.test(t) || resultPattern.test(t)) {
+        cleaned.push(t);
+      }
+    }
+
+    return cleaned.join(' ');
+  }
+
+  _movesToPGN(moveText) {
+    // Build a minimal PGN wrapper around move text
+    const today = new Date().toISOString().split('T')[0].replace(/-/g, '.');
+    // Check if there's a result in the move text
+    let result = '*';
+    if (/1-0/.test(moveText)) result = '1-0';
+    else if (/0-1/.test(moveText)) result = '0-1';
+    else if (/1\/2-1\/2/.test(moveText)) result = '1/2-1/2';
+
+    return `[Event "Handwritten Game"]\n[Site "?"]\n[Date "${today}"]\n[White "Player1"]\n[Black "Player2"]\n[Result "${result}"]\n\n${moveText}`;
   }
 
   switchTab(tab) {
@@ -1504,7 +1697,205 @@ class App {
       return;
     }
 
-    // Store the user's selected analysis side for pasted PGN
+    // Validate each game's moves before loading
+    const validatedGames = [];
+    const problemGames = [];
+
+    for (let gi = 0; gi < pgnTexts.length; gi++) {
+      const issues = this._validatePGNMoves(pgnTexts[gi]);
+      if (issues.length > 0) {
+        problemGames.push({ index: gi, pgn: pgnTexts[gi], issues });
+      } else {
+        validatedGames.push(pgnTexts[gi]);
+      }
+    }
+
+    if (problemGames.length > 0) {
+      this._showPGNValidationDialog(pgnTexts, problemGames, validatedGames);
+      return;
+    }
+
+    this._finishLoadPGN(pgnTexts);
+  }
+
+  _validatePGNMoves(pgn) {
+    const issues = [];
+    const chess = new Chess();
+
+    // Extract move text (everything after headers and empty lines)
+    const lines = pgn.split('\n');
+    let moveText = '';
+    let pastHeaders = false;
+    for (const line of lines) {
+      const t = line.trim();
+      if (t.startsWith('[') && t.endsWith(']')) continue;
+      if (!pastHeaders && t === '') { pastHeaders = true; continue; }
+      moveText += ' ' + t;
+    }
+    moveText = moveText.trim();
+    if (!moveText) return issues;
+
+    // Tokenize: strip move numbers, results, comments
+    const tokens = moveText
+      .replace(/\{[^}]*\}/g, '') // remove comments
+      .replace(/\([^)]*\)/g, '') // remove variations
+      .replace(/\$\d+/g, '')     // remove NAGs
+      .split(/\s+/)
+      .filter(t => t && !t.match(/^\d+\.+$/) && !t.match(/^(1-0|0-1|1\/2-1\/2|\*)$/));
+
+    let moveNum = 0;
+    for (const token of tokens) {
+      moveNum++;
+      const halfMove = Math.ceil(moveNum / 1); // 1-indexed
+      const result = chess.move(token);
+      if (!result) {
+        const ply = chess.history().length + 1;
+        const fullMoveNum = Math.ceil(ply / 2);
+        const side = (ply % 2 === 1) ? 'White' : 'Black';
+        // Try to suggest a fix
+        const suggestion = this._suggestMoveFix(chess, token);
+        issues.push({ move: token, moveNumber: fullMoveNum, side, suggestion, ply });
+        // Stop validation at first error since subsequent moves depend on board state
+        break;
+      }
+    }
+    return issues;
+  }
+
+  _suggestMoveFix(chess, badMove) {
+    const legalMoves = chess.moves();
+    // Try common OCR/typo fixes
+    const fixes = [
+      badMove.replace(/0/g, 'O'),  // zero → O for castling
+      badMove.replace(/O/g, '0'),
+      badMove.replace(/l/g, '1'),
+      badMove.replace(/I/g, '1'),
+      badMove.replace(/S/g, '5'),
+      badMove.charAt(0).toUpperCase() + badMove.slice(1), // capitalize piece
+      badMove.toLowerCase(), // maybe all-lowercase pawn move
+    ];
+    for (const fix of fixes) {
+      if (legalMoves.includes(fix)) return fix;
+    }
+    // Levenshtein distance 1 match
+    for (const legal of legalMoves) {
+      if (this._levenshtein(badMove, legal) === 1) return legal;
+    }
+    return null;
+  }
+
+  _levenshtein(a, b) {
+    const m = a.length, n = b.length;
+    const dp = Array.from({length: m + 1}, (_, i) => Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++)
+      for (let j = 1; j <= n; j++)
+        dp[i][j] = Math.min(
+          dp[i-1][j] + 1,
+          dp[i][j-1] + 1,
+          dp[i-1][j-1] + (a[i-1] !== b[j-1] ? 1 : 0)
+        );
+    return dp[m][n];
+  }
+
+  _showPGNValidationDialog(allPgns, problemGames, validGames) {
+    // Remove existing dialog if any
+    const existing = document.getElementById('pgn-validation-dialog');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'pgn-validation-dialog';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:var(--bg2);border-radius:12px;padding:24px;max-width:560px;width:100%;max-height:80vh;overflow-y:auto;border:1px solid var(--bg4);';
+
+    let html = `<h3 style="margin-bottom:14px;color:var(--accent);">Move Validation Issues</h3>`;
+    html += `<p style="font-size:0.9em;color:var(--text2);margin-bottom:16px;">The following moves could not be parsed. Fix them below or skip the problematic game(s).</p>`;
+
+    for (const pg of problemGames) {
+      const gameLabel = allPgns.length > 1 ? `Game ${pg.index + 1}: ` : '';
+      for (const issue of pg.issues) {
+        html += `<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px;">`;
+        html += `<div style="font-size:0.9em;margin-bottom:8px;"><strong>${gameLabel}Move ${issue.moveNumber} (${issue.side})</strong>: <code style="color:var(--accent);background:var(--bg);padding:2px 6px;border-radius:4px;">${issue.move}</code> is not a legal move.</div>`;
+        html += `<div style="display:flex;gap:8px;align-items:center;">`;
+        html += `<label style="font-size:0.85em;color:var(--text2);white-space:nowrap;">Replace with:</label>`;
+        html += `<input type="text" class="pgn-fix-input" data-game="${pg.index}" data-bad="${issue.move}" data-ply="${issue.ply}" value="${issue.suggestion || ''}" placeholder="Enter correct move" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--bg4);background:var(--bg);color:var(--text);font-size:0.9em;font-family:monospace;">`;
+        if (issue.suggestion) {
+          html += `<span style="font-size:0.78em;color:var(--text2);">suggested</span>`;
+        }
+        html += `</div></div>`;
+      }
+    }
+
+    html += `<div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;">`;
+    html += `<button id="pgn-fix-apply" class="btn-primary">Apply Fixes &amp; Load</button>`;
+    if (validGames.length > 0) {
+      html += `<button id="pgn-fix-skip" class="btn-secondary">Skip Bad Games (load ${validGames.length} valid)</button>`;
+    }
+    html += `<button id="pgn-fix-cancel" class="btn-secondary">Cancel</button>`;
+    html += `</div>`;
+
+    dialog.innerHTML = html;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    // Close on overlay click
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+    // Cancel
+    document.getElementById('pgn-fix-cancel').addEventListener('click', () => overlay.remove());
+
+    // Skip bad games
+    const skipBtn = document.getElementById('pgn-fix-skip');
+    if (skipBtn) {
+      skipBtn.addEventListener('click', () => {
+        overlay.remove();
+        if (validGames.length > 0) {
+          this._finishLoadPGN(validGames);
+        }
+      });
+    }
+
+    // Apply fixes
+    document.getElementById('pgn-fix-apply').addEventListener('click', () => {
+      const inputs = dialog.querySelectorAll('.pgn-fix-input');
+      const fixedPgns = [...allPgns];
+      let hasEmpty = false;
+
+      for (const input of inputs) {
+        const gi = parseInt(input.dataset.game);
+        const badMove = input.dataset.bad;
+        const fix = input.value.trim();
+        if (!fix) { hasEmpty = true; continue; }
+        // Replace the bad move in the PGN text
+        fixedPgns[gi] = fixedPgns[gi].replace(new RegExp('(?<=\\s|\\.)' + badMove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\s|$)'), fix);
+      }
+
+      if (hasEmpty) {
+        // Re-validate with fixes applied
+        const stillBad = [];
+        for (const pg of problemGames) {
+          const issues = this._validatePGNMoves(fixedPgns[pg.index]);
+          if (issues.length > 0) stillBad.push(pg.index + 1);
+        }
+        if (stillBad.length > 0) {
+          const statusSpan = dialog.querySelector('.pgn-fix-error') || document.createElement('div');
+          statusSpan.className = 'pgn-fix-error';
+          statusSpan.style.cssText = 'color:var(--accent);font-size:0.85em;margin-top:8px;';
+          statusSpan.textContent = `Game(s) ${stillBad.join(', ')} still have invalid moves. Please provide corrections or skip.`;
+          if (!dialog.querySelector('.pgn-fix-error')) dialog.appendChild(statusSpan);
+          return;
+        }
+      }
+
+      overlay.remove();
+      this._finishLoadPGN(fixedPgns);
+    });
+  }
+
+  _finishLoadPGN(pgnTexts) {
     this.pgnPlayerColor = document.getElementById('pgn-player-color').value;
 
     this.games = pgnTexts.map(pgn => ({
@@ -2795,7 +3186,7 @@ class App {
     const PW = 612, PH = 792;       // letter
     const ML = 32, MR = 32, MT = 32, MB = 32;
     const HEADER_H = 28;            // page header block
-    const COLS = 2, ROWS = 4;
+    const COLS = 2, ROWS = 3;
     const GAP_X = 18, GAP_Y = 14;
     const CELL_W = (PW - ML - MR - GAP_X * (COLS - 1)) / COLS;   // ≈ 265pt
     const CELL_H = (PH - MT - MB - HEADER_H - GAP_Y * (ROWS - 1)) / ROWS; // ≈ 163pt
@@ -2828,7 +3219,7 @@ class App {
       canvas.width = px; canvas.height = px;
       const ctx = canvas.getContext('2d');
       const grid = parseFen(fen);
-      const rowIdx = flip ? [0,1,2,3,4,5,6,7] : [7,6,5,4,3,2,1,0];
+      const rowIdx = flip ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
       const colIdx = flip ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
 
       for (let row = 0; row < 8; row++) {

@@ -2004,7 +2004,26 @@ class App {
       const isNeg = ['blunder','mistake','inaccuracy'].includes(a.classification);
       const isPos = ['best','brilliant','excellent'].includes(a.classification);
       if (a.bestMoveSAN && isNeg) {
-        bestEl.innerHTML = `<span style="color:var(--text2)">Best was</span> <strong style="color:#2196f3">${a.bestMoveSAN}</strong> <span style="color:var(--text2)">(eval: ${evalBeforeDisplay})</span>`;
+        // Format PV continuation with move numbers (show up to 4 moves of the line)
+        let pvDisplay = '';
+        if (a.pvLineSAN && a.pvLineSAN.length > 1) {
+          const moveNum = Math.floor(a.moveIndex / 2) + 1;
+          const isWhiteMove = a.playerColor === 'w';
+          let parts = [];
+          for (let pi = 0; pi < Math.min(a.pvLineSAN.length, 4); pi++) {
+            const plyIndex = pi + (isWhiteMove ? 0 : 1);
+            const num = moveNum + Math.floor(plyIndex / 2);
+            if (pi === 0 && !isWhiteMove) {
+              parts.push(`${num}...${a.pvLineSAN[pi]}`);
+            } else if ((pi === 0 && isWhiteMove) || (plyIndex % 2 === 0)) {
+              parts.push(`${num}.${a.pvLineSAN[pi]}`);
+            } else {
+              parts.push(a.pvLineSAN[pi]);
+            }
+          }
+          pvDisplay = ` <span style="color:var(--text2);font-size:1.05em">▸ ${parts.join(' ')}</span>`;
+        }
+        bestEl.innerHTML = `<span style="color:var(--text2)">Best was</span> <strong style="color:#2196f3">${a.bestMoveSAN}</strong> <span style="color:var(--text2)">(eval: ${evalBeforeDisplay})</span>${pvDisplay}`;
       } else if (a.classification === 'brilliant') {
         bestEl.innerHTML = `<span style="color:#00e5ff">&#9733; ${a.san}</span> <span style="color:var(--text2)">is a brilliant sacrifice — the engine's top choice</span>`;
       } else if (a.classification === 'best') {
@@ -2164,10 +2183,23 @@ class App {
       // Get best move info for the position BEFORE this move
       const bestMoveUCI = prevResult.bestMoveUCI || (prevResult.pv ? prevResult.pv.split(' ')[0] : '');
       let bestMoveSAN = '';
+      let pvLineSAN = [];
       if (prevResult.pv) {
         const prevFen = this.gamePositions[i];
         const tempChess = new Chess(prevFen);
         bestMoveSAN = uciToSan(tempChess, bestMoveUCI);
+        // Convert full PV line to SAN for continuation display
+        const pvMoves = prevResult.pv.split(' ');
+        const pvChess = new Chess(prevFen);
+        for (const uci of pvMoves) {
+          if (!uci || uci.length < 4) break;
+          const from = uci.substring(0, 2);
+          const to = uci.substring(2, 4);
+          const promo = uci.length > 4 ? uci[4] : undefined;
+          const m = pvChess.move({from, to, promotion: promo});
+          if (!m) break;
+          pvLineSAN.push(m.san);
+        }
       }
 
       // Player's win chance (from their perspective, not white's)
@@ -2199,6 +2231,7 @@ class App {
         classification,
         bestMoveSAN,
         bestMoveUCI,
+        pvLineSAN,
         fenBefore: this.gamePositions[i]
       });
 

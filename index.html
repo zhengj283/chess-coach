@@ -122,6 +122,17 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
 .badge-brilliant { background: #00e5ff; color: #000; }
 .badge-book { background: #a0887a; color: #fff; }
 .analysis-best { color: var(--text2); margin-bottom: 6px; font-family: monospace; }
+.continuation-controls { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.continuation-controls .btn-try { background: #2196f3; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.85em; cursor: pointer; transition: opacity 0.2s; }
+.continuation-controls .btn-try:hover { opacity: 0.85; }
+.continuation-controls .btn-try:disabled, .continuation-controls .btn-back:disabled { opacity: 0.4; cursor: not-allowed; }
+.continuation-controls .btn-back { background: var(--bg4); color: var(--text); border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.85em; cursor: pointer; }
+.continuation-controls .btn-back:hover:not(:disabled) { background: #444; }
+.continuation-info { font-size: 0.82em; color: var(--text2); margin-top: 4px; }
+.continuation-line { font-family: monospace; font-size: 0.85em; color: var(--text2); margin-top: 6px; padding: 6px 8px; background: var(--bg); border-radius: 4px; line-height: 1.6; }
+.continuation-line .cont-move { color: var(--text); cursor: pointer; padding: 1px 3px; border-radius: 3px; }
+.continuation-line .cont-move:hover { background: var(--bg4); }
+.continuation-line .cont-move.cont-active { background: var(--accent2); color: #fff; font-weight: bold; }
 .analysis-winchance { font-size: 0.85em; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
 .wc-bar { flex: 1; height: 10px; background: var(--bg4); border-radius: 5px; overflow: hidden; max-width: 120px; }
 .wc-bar-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
@@ -393,6 +404,13 @@ textarea { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var
             <div id="analysis-winchance" class="analysis-winchance"></div>
             <div id="analysis-best" class="analysis-best"></div>
             <div id="analysis-comment" class="analysis-comment"></div>
+            <div id="continuation-controls" class="continuation-controls" style="display:none">
+              <button class="btn-try" id="btn-try-better">&#9654; Try better move</button>
+              <button class="btn-back" id="btn-cont-prev" style="display:none">&#9664; Prev</button>
+              <button class="btn-try" id="btn-cont-next" style="display:none">&#9654; Next</button>
+              <button class="btn-back" id="btn-cont-back" style="display:none">&#8617; Back to game</button>
+            </div>
+            <div id="continuation-line" class="continuation-line" style="display:none"></div>
           </div>
           <div id="game-summary" class="game-summary" style="display:none"></div>
           <div class="progress-bar" id="analysis-progress-bar" style="display:none"><div class="progress-fill" id="analysis-progress-fill"></div></div>
@@ -898,6 +916,7 @@ class Engine {
     this.currentResolve = null;
     this.currentAnalysis = {};
     this.messageBuffer = [];
+    this._skipBestmoveCount = 0; // counter to discard stale bestmove responses after stop
   }
 
   async init() {
@@ -927,9 +946,14 @@ class Engine {
   _onMessage(e) {
     const line = typeof e.data === 'string' ? e.data : '';
     if (line.startsWith('info') && line.includes('depth')) {
-      this._parseInfo(line);
+      if (this._skipBestmoveCount === 0) this._parseInfo(line);
     }
     if (line.startsWith('bestmove')) {
+      // Discard stale bestmove from a previous stopped eval
+      if (this._skipBestmoveCount > 0) {
+        this._skipBestmoveCount--;
+        return;
+      }
       const parts = line.split(' ');
       this.currentAnalysis.bestMoveUCI = parts[1] || '';
       this.analyzing = false;
@@ -986,6 +1010,7 @@ class Engine {
   stop() {
     if (this.analyzing) {
       this.worker.postMessage('stop');
+      this._skipBestmoveCount++; // the worker will send a bestmove for the stopped eval — ignore it
       this.analyzing = false;
       if (this.currentResolve) {
         this.currentResolve({...this.currentAnalysis});
@@ -1202,6 +1227,13 @@ class App {
     this.practiceHintGeneration = 0; // generation counter to cancel stale hint evals
     this.username = '';
     this.selectedGames = [];
+    // Continuation mode state
+    this.continuationMode = false;
+    this.continuationChess = null;    // Chess instance for continuation position
+    this.continuationMoves = [];      // [{san, from, to, fen}] moves played in continuation
+    this.continuationBaseIndex = -1;  // the game move index we branched from
+    this.continuationViewIndex = -1;  // which continuation move we're viewing
+    this._contBusy = false;           // guard against re-entrant engine calls
   }
 
   async init() {
@@ -1256,10 +1288,22 @@ class App {
     document.getElementById('btn-flip').addEventListener('click', () => this.boards.analyze.flip());
     document.getElementById('btn-analyze').addEventListener('click', () => this.analyzeCurrentGame());
 
+    // Continuation controls
+    document.getElementById('btn-try-better').addEventListener('click', () => this._startContinuation());
+    document.getElementById('btn-cont-prev').addEventListener('click', () => this._continuationPrev());
+    document.getElementById('btn-cont-next').addEventListener('click', () => this._continuationNext());
+    document.getElementById('btn-cont-back').addEventListener('click', () => this._exitContinuation());
+
     // Keyboard nav
     document.addEventListener('keydown', (e) => {
       const tab = document.querySelector('.tab-panel.active')?.id;
       if (tab === 'tab-analyze') {
+        if (this.continuationMode) {
+          if (e.key === 'ArrowRight') this._continuationNext();
+          if (e.key === 'ArrowLeft') this._continuationPrev();
+          if (e.key === 'Escape') this._exitContinuation();
+          return;
+        }
         if (e.key === 'ArrowLeft') this.goToMove(this.currentMoveIndex - 1);
         if (e.key === 'ArrowRight') this.goToMove(this.currentMoveIndex + 1);
         if (e.key === 'Home') this.goToMove(-1);
@@ -1828,6 +1872,12 @@ class App {
     this.currentGameIndex = index;
     const game = this.games[index];
     this.analysis = null;
+    // Reset continuation mode
+    this.continuationMode = false;
+    this.continuationChess = null;
+    this.continuationMoves = [];
+    document.getElementById('continuation-line').style.display = 'none';
+    this._showContinuationButton(false);
 
     // Parse PGN
     this.gameChess = new Chess();
@@ -1907,6 +1957,16 @@ class App {
 
   goToMove(index) {
     if (!this.gamePositions || this.gamePositions.length === 0) return;
+    // Exit continuation mode when navigating the original game
+    if (this.continuationMode) {
+      this.continuationMode = false;
+      this._contBusy = false;
+      this.continuationChess = null;
+      this.continuationMoves = [];
+      this.continuationViewIndex = -1;
+      this.boards.analyze.disableInteraction();
+      document.getElementById('continuation-line').style.display = 'none';
+    }
     index = Math.max(-1, Math.min(index, this.gamePositions.length - 2));
     this.currentMoveIndex = index;
 
@@ -2083,12 +2143,19 @@ class App {
 
       // Update eval bar
       this._updateEvalBar(evalWhite);
+
+      // Show "Try better move" button for mistakes/blunders/inaccuracies
+      const showCont = isNeg && a.bestMoveUCI && this.engine.ready;
+      this._showContinuationButton(showCont);
     } else if (index === -1) {
       document.getElementById('analysis-eval').innerHTML = this.analysis ? '<span>0.0</span>' : '<span>Click "Analyze Game"</span>';
       document.getElementById('analysis-winchance').innerHTML = '';
       document.getElementById('analysis-best').textContent = '';
       document.getElementById('analysis-comment').textContent = '';
       this._updateEvalBar(0);
+      this._showContinuationButton(false);
+    } else {
+      this._showContinuationButton(false);
     }
   }
 
@@ -2103,6 +2170,421 @@ class App {
     const sign = evalWhiteCp >= 0 ? '+' : '';
     textEl.textContent = sign + (evalWhiteCp / 100).toFixed(1);
     textEl.style.color = displayPct > 50 ? '#333' : '#eee';
+  }
+
+  // =================== ENGINE CONTINUATION ===================
+
+  _showContinuationButton(show) {
+    const controls = document.getElementById('continuation-controls');
+    const btnTry = document.getElementById('btn-try-better');
+    const btnPrev = document.getElementById('btn-cont-prev');
+    const btnNext = document.getElementById('btn-cont-next');
+    const btnBack = document.getElementById('btn-cont-back');
+    controls.style.display = show ? 'flex' : 'none';
+    btnTry.style.display = show && !this.continuationMode ? '' : 'none';
+    btnPrev.style.display = this.continuationMode ? '' : 'none';
+    btnNext.style.display = this.continuationMode ? '' : 'none';
+    btnBack.style.display = this.continuationMode ? '' : 'none';
+  }
+
+  async _startContinuation() {
+    if (!this.analysis || this.currentMoveIndex < 0) return;
+    const a = this.analysis[this.currentMoveIndex];
+    if (!a || !a.bestMoveUCI) return;
+
+    this.continuationMode = true;
+    this.continuationBaseIndex = this.currentMoveIndex;
+    this.continuationMoves = [];
+    this.continuationViewIndex = -1;
+
+    // Build chess position from BEFORE the current move (the position where the mistake was made)
+    const fenBefore = this.gamePositions[this.currentMoveIndex]; // position before the move at currentMoveIndex
+    this.continuationChess = new Chess(fenBefore);
+
+    // The first move is the engine's best → always classified as "best"
+    // Use the eval from the original analysis: evalBefore is the position before the mistake
+    const bestUCI = a.bestMoveUCI;
+    const from = bestUCI.substring(0, 2);
+    const to = bestUCI.substring(2, 4);
+    const promo = bestUCI.length > 4 ? bestUCI[4] : undefined;
+    const playerColor = a.playerColor; // who made the mistake
+    const bestMove = this.continuationChess.move({from, to, promotion: promo});
+    if (!bestMove) { this.continuationMode = false; return; }
+
+    this.continuationMoves.push({
+      san: bestMove.san, from: bestMove.from, to: bestMove.to, fen: this.continuationChess.fen(),
+      classification: null, playerColor, isEngine: true
+    });
+    this.continuationViewIndex = 0;
+
+    // Enable board interaction — user can play moves on the board
+    this.boards.analyze.enableInteraction(this.continuationChess, (move) => this._onContinuationBoardMove(move));
+
+    // Update UI
+    this._showContinuationButton(true);
+    this._updateContinuationDisplay();
+
+    // Auto-play engine response for the opponent
+    await this._continuationEngineReply();
+  }
+
+  async _onContinuationBoardMove(move) {
+    if (!this.continuationMode || this._contBusy) return;
+    this._contBusy = true;
+
+    // Truncate any future moves if user went back and played differently
+    if (this.continuationViewIndex < this.continuationMoves.length - 1) {
+      this.continuationMoves = this.continuationMoves.slice(0, this.continuationViewIndex + 1);
+    }
+    const playerColor = move.color;
+    const fenAfter = this.continuationChess.fen();
+    // Add move with pending classification (user move)
+    const contMove = {
+      san: move.san, from: move.from, to: move.to, fen: fenAfter,
+      classification: null, playerColor, isEngine: false
+    };
+    this.continuationMoves.push(contMove);
+    this.continuationViewIndex = this.continuationMoves.length - 1;
+    this._updateContinuationDisplay();
+
+    // Classify the user's move: evaluate position before and after
+    if (this.engine.ready) {
+      const fenBefore = this.continuationViewIndex >= 1
+        ? this.continuationMoves[this.continuationViewIndex - 1].fen
+        : this.gamePositions[this.continuationBaseIndex];
+      const beforeResult = await this.engine.evaluate(fenBefore, {movetime: 500});
+      if (!this.continuationMode) { this._contBusy = false; return; }
+      const afterResult = await this.engine.evaluate(fenAfter, {movetime: 500});
+      if (!this.continuationMode) { this._contBusy = false; return; }
+
+      const stmBefore = fenBefore.split(' ')[1] || 'w';
+      const stmAfter = fenAfter.split(' ')[1] || 'w';
+      const evalWhiteBefore = evalToWhite(cappedScore(beforeResult.score, beforeResult.mate), stmBefore);
+      const evalWhiteAfter = evalToWhite(cappedScore(afterResult.score, afterResult.mate), stmAfter);
+      const wcBefore = winChance(evalWhiteBefore);
+      const wcAfter = winChance(evalWhiteAfter);
+      const wcPlayerBefore = playerColor === 'w' ? wcBefore : 100 - wcBefore;
+      const wcPlayerAfter = playerColor === 'w' ? wcAfter : 100 - wcAfter;
+      const wcDrop = wcPlayerBefore - wcPlayerAfter;
+      const playedUCI = move.from + move.to + (move.promotion || '');
+      const bestMoveUCI = beforeResult.bestMoveUCI || '';
+      const sacrifice = isSacrificialMove(new Chess(fenBefore), move.san);
+
+      contMove.classification = classifyMove(wcDrop, {
+        san: move.san, isCapture: !!move.captured, isSacrifice: sacrifice,
+        bestMoveUCI, playedMoveUCI: playedUCI,
+        wcBefore: wcPlayerBefore, wcAfter: wcPlayerAfter
+      });
+      contMove.evalBefore = evalWhiteBefore;
+      contMove.evalAfter = evalWhiteAfter;
+      this._updateContinuationDisplay();
+    }
+
+    // Auto-play engine reply
+    this._contBusy = false; // release before engine reply (which sets its own guard)
+    if (this.continuationMode && !this.continuationChess.game_over()) {
+      await this._continuationEngineReply();
+    }
+  }
+
+  _getLatestContFen() {
+    return this.continuationMoves.length > 0
+      ? this.continuationMoves[this.continuationMoves.length - 1].fen
+      : this.gamePositions[this.continuationBaseIndex];
+  }
+
+  async _contPlayEngineMove() {
+    // Play one engine move from the latest position. Returns true if a move was played.
+    const fen = this._getLatestContFen();
+    this.continuationChess.load(fen);
+    if (this.continuationChess.game_over()) return false;
+
+    const sideToMove = this.continuationChess.turn();
+    const result = await this.engine.evaluate(fen, {movetime: 800});
+    if (!this.continuationMode) return false;
+
+    const uci = result.bestMoveUCI;
+    if (!uci || uci.length < 4) return false;
+
+    // Re-load FEN before making the move (engine eval may have changed chess state via _updateContinuationDisplay)
+    this.continuationChess.load(fen);
+    const from = uci.substring(0, 2);
+    const to = uci.substring(2, 4);
+    const promo = uci.length > 4 ? uci[4] : undefined;
+    const move = this.continuationChess.move({from, to, promotion: promo});
+    if (!move) return false;
+
+    this.continuationMoves.push({
+      san: move.san, from: move.from, to: move.to, fen: this.continuationChess.fen(),
+      classification: null, playerColor: sideToMove, isEngine: true
+    });
+    this.continuationViewIndex = this.continuationMoves.length - 1;
+    return true;
+  }
+
+  async _continuationEngineReply() {
+    if (!this.continuationMode || !this.engine.ready || this._contBusy) return;
+    this._contBusy = true;
+
+    const btnNext = document.getElementById('btn-cont-next');
+    btnNext.disabled = true;
+    btnNext.textContent = '... thinking';
+
+    const played = await this._contPlayEngineMove();
+
+    if (this.continuationMode) {
+      this._updateContinuationDisplay();
+      if (!played) this._updateContinuationStatus('Game over');
+      // Eval the final position for the eval bar
+      await this._evalContinuationPosition();
+      if (this.continuationMode) {
+        btnNext.disabled = false;
+        btnNext.innerHTML = '&#9654; Next';
+      }
+    }
+    this._contBusy = false;
+  }
+
+  async _continuationNext() {
+    if (!this.continuationMode || this._contBusy) return;
+
+    // If we're viewing a past move, advance to next existing move
+    if (this.continuationViewIndex < this.continuationMoves.length - 1) {
+      this.continuationViewIndex++;
+      this._updateContinuationDisplay();
+      return;
+    }
+
+    // Otherwise, generate next move pair (engine plays one move + auto-reply)
+    this._contBusy = true;
+    const btnNext = document.getElementById('btn-cont-next');
+    btnNext.disabled = true;
+    btnNext.textContent = '... thinking';
+
+    // Play one move
+    const played1 = await this._contPlayEngineMove();
+    if (!this.continuationMode) { this._contBusy = false; return; }
+
+    if (played1) {
+      this._updateContinuationDisplay();
+
+      // Auto-play the opponent's response
+      const played2 = await this._contPlayEngineMove();
+      if (!this.continuationMode) { this._contBusy = false; return; }
+      if (played2) {
+        this._updateContinuationDisplay();
+      }
+    }
+
+    if (!played1) this._updateContinuationStatus('Game over');
+    // Eval the final position for the eval bar
+    await this._evalContinuationPosition();
+    if (this.continuationMode) {
+      btnNext.disabled = false;
+      btnNext.innerHTML = '&#9654; Next';
+    }
+    this._contBusy = false;
+  }
+
+  async _continuationPrev() {
+    if (!this.continuationMode || this.continuationViewIndex <= 0 || this._contBusy) return;
+    this._contBusy = true;
+    this.continuationViewIndex--;
+    // Truncate all moves after the current position so the user can play from here
+    this.continuationMoves = this.continuationMoves.slice(0, this.continuationViewIndex + 1);
+    this._updateContinuationDisplay();
+    await this._evalContinuationPosition();
+    this._contBusy = false;
+  }
+
+  _updateContinuationDisplay() {
+    // Update board position
+    const isAtEnd = this.continuationViewIndex === this.continuationMoves.length - 1;
+    if (this.continuationViewIndex >= 0 && this.continuationViewIndex < this.continuationMoves.length) {
+      const cm = this.continuationMoves[this.continuationViewIndex];
+      this.boards.analyze.setPosition(cm.fen);
+      this.boards.analyze.setLastMove(cm.from, cm.to);
+      // Sync chess instance to current view position for board interaction
+      this.continuationChess.load(cm.fen);
+      // Enable board interaction only at the latest position
+      if (isAtEnd && !this.continuationChess.game_over()) {
+        this.boards.analyze.enableInteraction(this.continuationChess, (move) => this._onContinuationBoardMove(move));
+      } else {
+        this.boards.analyze.disableInteraction();
+      }
+    } else {
+      // Back to the position before the mistake
+      const fen = this.gamePositions[this.continuationBaseIndex];
+      this.boards.analyze.setPosition(fen);
+      this.boards.analyze.setLastMove(null, null);
+      this.boards.analyze.disableInteraction();
+    }
+    this.boards.analyze.clearHighlightClasses();
+
+    const currentContMove = this.continuationViewIndex >= 0 ? this.continuationMoves[this.continuationViewIndex] : null;
+    const isUserMove = currentContMove && !currentContMove.isEngine;
+    const contClassification = isUserMove ? currentContMove.classification : null;
+
+    // Highlight destination square based on classification (user moves only)
+    if (isUserMove && contClassification && !['good'].includes(contClassification)) {
+      this.boards.analyze.highlightSquare(currentContMove.to, 'highlight-' + contClassification);
+    }
+
+    // Clear the "best was" text and win chance during continuation
+    document.getElementById('analysis-best').textContent = '';
+    document.getElementById('analysis-winchance').innerHTML = '';
+
+    // Show classification badge for user moves, plain label for engine moves
+    const badgeMap = {
+      brilliant: '<span class="analysis-badge badge-brilliant">Brilliant</span>',
+      best: '<span class="analysis-badge badge-best">Best</span>',
+      excellent: '<span class="analysis-badge badge-excellent">Excellent</span>',
+      good: '<span class="analysis-badge badge-good">Good</span>',
+      inaccuracy: '<span class="analysis-badge badge-inaccuracy">Inaccuracy</span>',
+      mistake: '<span class="analysis-badge badge-mistake">Mistake</span>',
+      blunder: '<span class="analysis-badge badge-blunder">Blunder</span>'
+    };
+    if (isUserMove && contClassification) {
+      document.getElementById('analysis-eval').innerHTML = badgeMap[contClassification] || '';
+    } else if (currentContMove?.isEngine) {
+      document.getElementById('analysis-eval').innerHTML =
+        `<span style="font-size:0.65em;color:var(--text2);">(opponent's move)</span>`;
+    } else {
+      document.getElementById('analysis-eval').innerHTML = '';
+    }
+
+    // Update prev button state
+    document.getElementById('btn-cont-prev').disabled = this.continuationViewIndex <= 0;
+
+    // Render continuation line
+    const lineEl = document.getElementById('continuation-line');
+    lineEl.style.display = '';
+    const baseMoveNum = Math.floor(this.continuationBaseIndex / 2) + 1;
+    const baseIsWhite = this.continuationBaseIndex % 2 === 0; // the move that was a mistake was white's
+    let html = '<span style="color:var(--text2);font-size:0.9em">Line: </span>';
+    for (let i = 0; i < this.continuationMoves.length; i++) {
+      const plyOffset = baseIsWhite ? i : i + 1; // offset from the mistake's ply
+      const moveNum = baseMoveNum + Math.floor(plyOffset / 2);
+      const isWhitePly = plyOffset % 2 === 0;
+      let prefix = '';
+      if (i === 0 && !isWhitePly) {
+        prefix = moveNum + '...';
+      } else if (isWhitePly) {
+        prefix = moveNum + '.';
+      }
+      const active = i === this.continuationViewIndex ? ' cont-active' : '';
+      const cm = this.continuationMoves[i];
+      // Color user moves by classification, engine moves in muted text
+      let moveColor = 'var(--text)';
+      if (cm.isEngine) {
+        moveColor = 'var(--text2)';
+      } else if (cm.classification) {
+        const colorMap = {brilliant:'#00e5ff', best:'#2196f3', excellent:'var(--green)', good:'var(--text)',
+          inaccuracy:'#ffeb3b', mistake:'var(--orange)', blunder:'var(--red)'};
+        moveColor = colorMap[cm.classification] || 'var(--text)';
+      }
+      html += `<span class="cont-move${active}" data-cont-index="${i}" style="color:${moveColor}">${prefix}${cm.san}</span> `;
+    }
+    lineEl.innerHTML = html;
+
+    // Bind clicks on continuation moves
+    lineEl.querySelectorAll('.cont-move').forEach(el => {
+      el.addEventListener('click', async () => {
+        if (this._contBusy) return;
+        this._contBusy = true;
+        this.continuationViewIndex = parseInt(el.dataset.contIndex);
+        this._updateContinuationDisplay();
+        await this._evalContinuationPosition();
+        this._contBusy = false;
+      });
+    });
+
+    // Update comment based on classification (user moves) or generic text (engine moves)
+    const commentEl = document.getElementById('analysis-comment');
+    const commentColors = {brilliant:'#00e5ff', best:'#2196f3', excellent:'var(--green)', good:'var(--text2)',
+      inaccuracy:'#ffeb3b', mistake:'var(--orange)', blunder:'var(--red)'};
+    commentEl.style.color = commentColors[contClassification] || 'var(--text2)';
+    if (this.continuationChess.game_over()) {
+      if (this.continuationChess.in_checkmate()) commentEl.textContent = 'Checkmate!';
+      else if (this.continuationChess.in_stalemate()) commentEl.textContent = 'Stalemate.';
+      else if (this.continuationChess.in_draw()) commentEl.textContent = 'Draw.';
+      else commentEl.textContent = 'Game over.';
+    } else if (isUserMove && contClassification) {
+      const san = currentContMove.san;
+      const descs = {
+        brilliant: `${san} is a brilliant move!`,
+        best: `${san} is the engine's top choice.`,
+        excellent: `${san} is an excellent move, very close to the best.`,
+        good: `${san} is a solid move.`,
+        inaccuracy: `${san} is a slight inaccuracy.`,
+        mistake: `${san} is a mistake.`,
+        blunder: `${san} is a blunder!`
+      };
+      commentEl.textContent = (descs[contClassification] || '') + ' Play moves on the board or click Next to continue.';
+    } else {
+      commentEl.textContent = 'Play moves on the board or click Next to let the engine continue. Press Esc to go back.';
+    }
+
+  }
+
+  _updateContinuationStatus(msg) {
+    document.getElementById('analysis-comment').textContent = msg;
+  }
+
+  _updateContinuationEval(engineResult, fen) {
+    if (!this.continuationMode) return;
+    const sideToMove = fen.split(' ')[1] || 'w';
+    const evalWhite = evalToWhite(cappedScore(engineResult.score, engineResult.mate), sideToMove);
+    this._updateEvalBar(evalWhite);
+    const sign = evalWhite >= 0 ? '+' : '';
+    const evalDisplay = engineResult.mate !== null && engineResult.mate !== undefined
+      ? (evalWhite > 0 ? '+M' + Math.abs(engineResult.mate) : '-M' + Math.abs(engineResult.mate))
+      : sign + (evalWhite / 100).toFixed(1);
+
+    // Show classification badge only for user moves
+    const currentContMove = this.continuationViewIndex >= 0 ? this.continuationMoves[this.continuationViewIndex] : null;
+    const isUserMove = currentContMove && !currentContMove.isEngine;
+    const contClassification = isUserMove ? currentContMove.classification : null;
+    const badgeMap = {
+      brilliant: '<span class="analysis-badge badge-brilliant">Brilliant</span>',
+      best: '<span class="analysis-badge badge-best">Best</span>',
+      excellent: '<span class="analysis-badge badge-excellent">Excellent</span>',
+      good: '<span class="analysis-badge badge-good">Good</span>',
+      inaccuracy: '<span class="analysis-badge badge-inaccuracy">Inaccuracy</span>',
+      mistake: '<span class="analysis-badge badge-mistake">Mistake</span>',
+      blunder: '<span class="analysis-badge badge-blunder">Blunder</span>'
+    };
+    const badge = contClassification ? badgeMap[contClassification] || '' : '';
+    const suffix = currentContMove?.isEngine ? '<span style="font-size:0.65em;color:var(--text2);">(opponent\'s move)</span>' : badge;
+    document.getElementById('analysis-eval').innerHTML =
+      `<span style="color:${evalWhite > 50 ? '#fff' : evalWhite < -50 ? '#999' : 'var(--text)'}">${evalDisplay}</span> ${suffix}`;
+  }
+
+  async _evalContinuationPosition() {
+    if (!this.continuationMode || !this.engine.ready) return;
+    const fen = this.continuationViewIndex >= 0
+      ? this.continuationMoves[this.continuationViewIndex].fen
+      : this.gamePositions[this.continuationBaseIndex];
+    const result = await this.engine.evaluate(fen, {movetime: 300});
+    this._updateContinuationEval(result, fen);
+  }
+
+  _exitContinuation() {
+    this.continuationMode = false;
+    this._contBusy = false;
+    this.continuationChess = null;
+    this.continuationMoves = [];
+    this.continuationViewIndex = -1;
+
+    // Disable board interaction
+    this.boards.analyze.disableInteraction();
+
+    // Hide continuation UI
+    document.getElementById('continuation-line').style.display = 'none';
+    this._showContinuationButton(false);
+
+    // Restore original position
+    this.goToMove(this.continuationBaseIndex);
   }
 
   // =================== ANALYSIS ===================
